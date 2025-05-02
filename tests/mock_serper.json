@@ -1,0 +1,12 @@
+[
+  {
+    "title": "Mock Result 1: All About Testing",
+    "link": "https://example.com/testing",
+    "snippet": "This is the first mock search result snippet, focusing on the importance of testing code."
+  },
+  {
+    "title": "Mock Result 2: Python Pytest Guide",
+    "link": "https://example.com/pytest-guide",
+    "snippet": "A second mock result providing a brief overview of using pytest for Python unit tests."
+  }
+]
