@@ -2,24 +2,22 @@
 Agent module for reasoning over gathered information.
 
 Combines information from various sources (e.g., web search, RAG)
-into a coherent context before synthesis.
+into a coherent context string suitable for synthesis.
 """
 from typing import List, Dict, Any
 
 def reason_over_sources(search_results: List[Dict[str, Any]], rag_context: str, verbose: bool = False) -> str:
     """
-    Reasons over the collected information from search and RAG.
+    Reasons over the collected information from search and RAG by concatenating them.
 
     Args:
-        search_results: A list of dictionaries from the search module.
+        search_results: A list of dictionaries from the search module (expecting 'title', 'link', 'snippet').
         rag_context: A string containing context from the RAG module.
         verbose: Flag for detailed output.
 
     Returns:
-        A string representing the combined and reasoned context.
-
-    Raises:
-        NotImplementedError: This is a stub function.
+        A string representing the combined context. Returns a default message
+        if no information was gathered.
     """
     if verbose:
         print("--- Reasoning Over Sources ---")
@@ -29,21 +27,29 @@ def reason_over_sources(search_results: List[Dict[str, Any]], rag_context: str, 
         else:
             print("No RAG context received.")
 
-    # TODO: Implement reasoning logic (e.g., simple concatenation, summarization)
-    # raise NotImplementedError("Reasoner not yet implemented.")
-    combined_context = "" # Placeholder
-    # Simple concatenation for now
+    combined_context_parts = []
+
     if search_results:
-        combined_context += "Search Results:\n"
+        search_summary = "Web Search Results:\n"
         for i, res in enumerate(search_results):
-            combined_context += f"- {res.get('title', 'N/A')}: {res.get('snippet', 'N/A')}\n"
-        combined_context += "\n"
+            title = res.get('title', 'N/A')
+            snippet = res.get('snippet', 'N/A')
+            link = res.get('link', 'N/A')
+            search_summary += f"{i+1}. {title}\n   Snippet: {snippet}\n   Source: {link}\n"
+        combined_context_parts.append(search_summary.strip())
+
     if rag_context:
-        combined_context += "RAG Context:\n"
-        combined_context += rag_context + "\n"
+        rag_summary = f"Relevant Information from Local Documents (RAG):\n{rag_context}"
+        combined_context_parts.append(rag_summary)
 
-    if verbose:
-        print("Combined context generated.")
-        # print(f"Context:\n{combined_context}") # Potentially too verbose
+    if not combined_context_parts:
+        final_context = "No information gathered from search or RAG."
+        if verbose:
+            print("No sources to reason over.")
+    else:
+        final_context = "\n\n---\n\n".join(combined_context_parts)
+        if verbose:
+            print("Combined context generated.")
+            # print(f"Context:\n{final_context}") # Potentially too verbose
 
-    return combined_context.strip() if combined_context else "No information gathered."
+    return final_context
