@@ -2,3 +2,6 @@ python-dotenv
 rich
 pytest
 requests
+chromadb
+openai
+tiktoken
