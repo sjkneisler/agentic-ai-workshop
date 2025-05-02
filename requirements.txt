@@ -1,7 +1,16 @@
-python-dotenv
-rich
-pytest
-requests
-chromadb
-openai
-tiktoken
+# Core dependencies
+python-dotenv==1.1.0
+requests==2.32.3
+
+# OpenAI related
+openai==1.70.0
+tiktoken==0.9.0
+
+# RAG related
+chromadb  # Version not found in pip freeze output
+
+# Testing
+pytest    # Version not found in pip freeze output
+
+# Optional for nice output
+rich      # Version not found in pip freeze output
