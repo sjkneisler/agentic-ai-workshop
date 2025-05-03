@@ -45,6 +45,28 @@ This project serves as a clear, runnable demonstration of a basic agentic workfl
     python main.py
     ```
 
+## ⚙️ Configuration
+
+Beyond the API keys and RAG path in the `.env` file, you can tune the agent's behavior using the `config.yaml` file:
+
+*   **Synthesizer:** Change the OpenAI model (`synthesizer.model`), adjust the system prompt (`synthesizer.system_prompt`) to alter the desired answer style (e.g., concise vs. detailed, tone), set `max_tokens`, and `temperature`.
+*   **Search:** Configure the default number of search results (`search.num_results`).
+*   **(Future):** Configure clarifier model/prompt, add output structure guidance, etc.
+
+Example (`config.yaml`):
+```yaml
+synthesizer:
+  model: "gpt-4" # Use GPT-4 instead of 3.5-turbo
+  system_prompt: |
+    You are a factual research assistant. Provide a bulleted list summarizing
+    the key findings based strictly on the provided context.
+  max_tokens: 300
+search:
+  num_results: 7
+```
+
+Modify `config.yaml` directly to experiment with different agent behaviors.
+
 ## ⚙️ How It Works
 
 The agent follows a predefined pipeline orchestrated in `agent/__init__.py`:
@@ -79,14 +101,13 @@ graph TD
 
 ## 🔧 Customize It
 
-The modular design makes it easy to modify or replace parts of the agent:
+While basic tuning (LLM model, prompts, number of search results) should be done via `config.yaml`, the modular design allows for deeper customization by editing the Python modules directly:
 
-*   **Change Search Provider:** Edit `agent/search.py` to use a different API.
-*   **Improve Planning:** Modify the rules in `agent/planner.py`.
-*   **Enhance Reasoning:** Update `agent/reasoner.py` to perform more sophisticated analysis or summarization.
-*   **Use a Different LLM:** Change the model and API call logic in `agent/synthesizer.py`.
-*   **Implement Clarification:** Add an LLM call to `agent/clarifier.py`.
-*   **Improve RAG:** Enhance `agent/rag.py` with better document loading, chunking, and embedding strategies.
+*   **Change Search Provider:** Edit `agent/search.py` to use a different API entirely.
+*   **Improve Planning:** Modify the rules or logic in `agent/planner.py`.
+*   **Enhance Reasoning:** Update `agent/reasoner.py` to perform more sophisticated analysis or summarization beyond simple concatenation.
+*   **Use a Different LLM Provider:** Fundamentally change the API call logic in `agent/synthesizer.py` or `agent/clarifier.py` to use a non-OpenAI model.
+*   **Improve RAG:** Enhance `agent/rag.py` with better document loading, chunking, embedding strategies, or different vector stores.
 
 ## 📚 RAG Setup (Optional)
 

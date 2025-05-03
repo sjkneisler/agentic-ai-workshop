@@ -7,15 +7,17 @@ Requires the SERPER_API_KEY environment variable to be set.
 import os
 import requests
 import json
-from typing import List, Dict, Any
+import certifi
+from typing import List, Dict, Any, Optional
+from .config import get_search_config # Import config loader
 
-def serper_search(query: str, n: int = 5, verbose: bool = False) -> List[Dict[str, Any]]:
+def serper_search(query: str, n: Optional[int] = None, verbose: bool = False) -> List[Dict[str, Any]]:
     """
     Performs a web search using the Serper API.
 
     Args:
         query: The search query string.
-        n: The number of results to return (default 5, max depends on Serper plan).
+        n: The number of results to return. If None, uses the value from config.yaml.
         verbose: Flag for detailed output.
 
     Returns:
@@ -26,9 +28,12 @@ def serper_search(query: str, n: int = 5, verbose: bool = False) -> List[Dict[st
     Raises:
         RuntimeError: If the SERPER_API_KEY environment variable is not set.
     """
+    search_config = get_search_config()
+    num_results = n if n is not None else search_config.get('num_results', 5) # Use arg 'n' if provided, else config, else default 5
+
     if verbose:
         print("--- Performing Web Search ---")
-        print(f"Searching for: {query} (n={n})")
+        print(f"Searching for: {query} (n={num_results})")
 
     api_key = os.getenv("SERPER_API_KEY")
     if not api_key:
@@ -41,12 +46,12 @@ def serper_search(query: str, n: int = 5, verbose: bool = False) -> List[Dict[st
     }
     payload = json.dumps({
         "q": query,
-        "num": n
+        "num": num_results # Use configured/determined number of results
     })
 
     results = []
     try:
-        response = requests.post(search_url, headers=headers, data=payload)
+        response = requests.post(search_url, headers=headers, data=payload, verify=certifi.where()) # Added verify parameter
         response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
         search_data = response.json()
 
@@ -75,4 +80,4 @@ def serper_search(query: str, n: int = 5, verbose: bool = False) -> List[Dict[st
         results = []
 
 
-    return results[:n] # Ensure we don't return more than requested if API gives more
+    return results[:num_results] # Ensure we don't return more than requested if API gives more

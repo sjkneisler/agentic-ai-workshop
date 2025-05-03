@@ -14,9 +14,9 @@ This project aims to create a clear, runnable demonstration of a recursive resea
 
 - The agent takes a user's question via a command-line interface (CLI).
 - It follows a predefined sequence of steps, calling specific Python modules for each task (clarification, planning, searching, optional RAG, reasoning, synthesis).
-- It utilizes external APIs (Serper for search, OpenAI for LLM tasks) configured via environment variables.
+- It utilizes external APIs (Serper for search, OpenAI for LLM tasks) configured via `.env` (API keys) and `config.yaml` (models, prompts).
 - It can optionally incorporate local documents into its knowledge base using Retrieval-Augmented Generation (RAG) with ChromaDB.
-- The final synthesized answer is printed to the console. A verbose mode allows users to inspect intermediate steps.
+- The final synthesized answer is printed to the console. Output detail is controlled via `--quiet`, default (includes sources), and `--verbose` (includes intermediate steps) flags.
 
 ## User Experience Goals
 

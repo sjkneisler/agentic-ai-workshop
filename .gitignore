@@ -136,3 +136,6 @@ cython_debug/
 
 # Project-specific
 .rag_store/
+
+# Configuration files
+config.yaml

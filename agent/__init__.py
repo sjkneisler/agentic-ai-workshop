@@ -14,7 +14,7 @@ from . import reasoner
 from . import synthesizer
 
 # For type hinting
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 import sys
 import traceback
 
@@ -55,7 +55,7 @@ def _print_verbose(message: str, title: str = "", style: str = "blue"):
             print(message)
 
 
-def run_agent(question: str, verbose: bool = False) -> str:
+def run_agent(question: str, verbosity_level: int = 1) -> Tuple[str, List[str]]:
     """
     Main entry point to run the full agent pipeline.
 
@@ -63,82 +63,93 @@ def run_agent(question: str, verbose: bool = False) -> str:
 
     Args:
         question: The user's input question.
-        verbose: Whether to print detailed intermediate steps using rich formatting if available.
+        verbosity_level: Controls output detail (0=quiet, 1=default, 2=verbose).
 
     Returns:
-        The final synthesized answer string. Returns an error message if
-        a critical step fails (e.g., missing required API key).
+        A tuple containing:
+            - The final synthesized answer string.
+            - A list of source URLs used (from search results).
+        Returns an error message and empty list if a critical step fails.
     """
-    if verbose:
+    is_verbose = verbosity_level == 2 # Check if we are in verbose mode
+
+    if is_verbose:
         _print_verbose(f"Agent received question: [cyan]'{question}'[/cyan]", title="Starting Agent Pipeline", style="bold blue")
 
 
     final_answer = "Agent pipeline encountered an unexpected issue." # Default error message
+    source_urls: List[str] = [] # Initialize list for URLs
 
     try:
         # --- Pass verbose flag to each module ---
         # Modules themselves should handle internal printing based on the flag.
-        # We print major step transitions here.
+        # We print major step transitions only if verbose.
 
         # 1. Clarify Question
-        if verbose: _print_verbose("Step 1: Clarifying Question", style="magenta")
-        clarified_question = clarifier.clarify_question(question, verbose=verbose)
+        if is_verbose: _print_verbose("Step 1: Clarifying Question", style="magenta")
+        # Pass is_verbose down to modules that support it
+        clarified_question = clarifier.clarify_question(question, verbose=is_verbose)
 
         # 2. Plan Steps
-        if verbose: _print_verbose("Step 2: Planning Steps", style="magenta")
-        planned_steps = planner.plan_steps(clarified_question, verbose=verbose)
+        if is_verbose: _print_verbose("Step 2: Planning Steps", style="magenta")
+        planned_steps = planner.plan_steps(clarified_question, verbose=is_verbose)
 
         # 3. Execute Steps (Search, RAG)
-        if verbose: _print_verbose(f"Step 3: Executing Planned Steps ({', '.join(planned_steps)})", style="magenta")
+        if is_verbose: _print_verbose(f"Step 3: Executing Planned Steps ({', '.join(planned_steps)})", style="magenta")
         search_results: List[Dict[str, Any]] = []
         rag_context: str = ""
+        # source_urls already initialized above
 
         if "search" in planned_steps:
-            search_results = search.serper_search(clarified_question, verbose=verbose)
+            search_results = search.serper_search(clarified_question, verbose=is_verbose)
+            # --- Extract URLs ---
+            source_urls = [result.get("link", "N/A") for result in search_results if result.get("link")]
+            # ---
         else:
-             if verbose: _print_verbose("Skipping search step based on plan.", style="yellow")
+             if is_verbose: _print_verbose("Skipping search step based on plan.", style="yellow")
 
         if "rag" in planned_steps:
-            rag_context = rag.query_vector_store(clarified_question, verbose=verbose)
+            rag_context = rag.query_vector_store(clarified_question, verbose=is_verbose)
         else:
-             if verbose: _print_verbose("Skipping RAG step based on plan.", style="yellow")
+             if is_verbose: _print_verbose("Skipping RAG step based on plan.", style="yellow")
 
         # 4. Reason Over Sources
-        if verbose: _print_verbose("Step 4: Reasoning Over Sources", style="magenta")
-        combined_context = reasoner.reason_over_sources(search_results, rag_context, verbose=verbose)
+        if is_verbose: _print_verbose("Step 4: Reasoning Over Sources", style="magenta")
+        combined_context = reasoner.reason_over_sources(search_results, rag_context, verbose=is_verbose)
 
         # 5. Synthesize Answer
-        if verbose: _print_verbose("Step 5: Synthesizing Answer", style="magenta")
-        final_answer = synthesizer.synthesize_answer(clarified_question, combined_context, verbose=verbose)
+        if is_verbose: _print_verbose("Step 5: Synthesizing Answer", style="magenta")
+        final_answer = synthesizer.synthesize_answer(clarified_question, combined_context, verbose=is_verbose)
 
-        if verbose:
+        if is_verbose:
              _print_verbose("Agent Pipeline Finished Successfully", style="bold green")
 
 
     except RuntimeError as e:
         # Catch critical errors like missing API keys required for a step
         error_msg = f"Critical Error: {e}"
-        if verbose:
+        # Print error only if default or verbose
+        if verbosity_level >= 1:
              _print_verbose(error_msg, title="Pipeline Error", style="bold red")
-        else:
-             print(f"\n❌ {error_msg}") # Print basic error if not verbose
         final_answer = f"Agent stopped due to a configuration error: {e}"
+        source_urls = [] # Ensure empty list on error
     except Exception as e:
         # Catch any other unexpected errors during the flow
         error_msg = f"Unexpected Error: {e}"
-        if verbose:
+        # Print error only if default or verbose
+        if verbosity_level >= 1:
             _print_verbose(error_msg, title="Pipeline Exception", style="bold red")
-            # Use rich traceback if available
-            if RICH_AVAILABLE:
-                console.print_exception(show_locals=True)
-            else:
-                traceback.print_exc()
-        else:
-             print(f"\n❌ {error_msg}") # Print basic error if not verbose
+            # Only show traceback if verbose
+            if is_verbose:
+                if RICH_AVAILABLE:
+                    console.print_exception(show_locals=True)
+                else:
+                    traceback.print_exc()
         final_answer = f"Agent encountered an unexpected error: {e}"
+        source_urls = [] # Ensure empty list on error
 
 
-    return final_answer
+    return final_answer, source_urls
 
 # Make the function easily importable
 __all__ = ['run_agent']

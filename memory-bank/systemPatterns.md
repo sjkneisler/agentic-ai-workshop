@@ -37,7 +37,7 @@ Below is a **two-tier implementation roadmap**:
 
 ### **Chunk 1 – Core Runtime Skeleton**
 
-1. `agent/__init__.py` → expose high-level `run_agent(question, verbose)` stub.
+1. `agent/__init__.py` → expose high-level `run_agent(question, verbosity_level)` stub (returns answer, urls).
 2. In each empty module (`clarifier.py`, `planner.py`, etc.) add:
 
    ```python
@@ -52,18 +52,19 @@ Below is a **two-tier implementation roadmap**:
 
    ```python
    import argparse, agent
-   # parse --verbose, prompt user, call agent.run_agent()
+   # parse --quiet/--verbose, prompt user, call agent.run_agent(), handle output based on verbosity
    ```
-4. Update `requirements.txt` with minimum essentials: `python-dotenv`, `rich` (for color logs), `pytest`.
+   4. Update `requirements.txt` with minimum essentials: `python-dotenv`, `rich` (for color logs), `pytest`, `PyYAML`.
 5. Commit: “Core skeleton with CLI shell.”
 
 ### **Chunk 2 – Serper Search Integration**
 
 1. Add `requests` to requirements.
-2. Implement `serper_search(query, n=5)`:
+2. Implement `serper_search(query, n=None, verbose=False)`:
 
    * Read `SERPER_API_KEY` via `dotenv` or `os.getenv`.
    * If missing → `RuntimeError` with clear msg.
+   * Use `n` if provided, otherwise get `num_results` from `config.yaml` via `agent/config.py`.
    * Build POST to `https://serpapi.serper.dev/search`.
    * Return list of dicts (`title`, `snippet`, `url`).
 3. Add docstring with API reference.
@@ -88,7 +89,7 @@ Below is a **two-tier implementation roadmap**:
 1. `reasoner.py`: simple concatenation of snippets + optional RAG text into “context” string.
 2. `synthesizer.py`:
 
-   * Single OpenAI call (`gpt-3.5-turbo` unless key missing → fallback to echo).
+   * Single OpenAI call (model, prompt, temp, max_tokens from `config.yaml` via `agent/config.py` unless key missing → fallback to echo).
    * If no key: return formatted bullet list of sources as placeholder.
 3. Provide `synthesize_answer(question, context, verbose=False)`; if verbose print token counts.
 4. Commit: “Initial reasoning & synthesis.”
@@ -104,9 +105,11 @@ Below is a **two-tier implementation roadmap**:
 
 ### **Chunk 6 – CLI Wiring & Verbose Flag**
 
-1. Wire modules in `agent.run_agent`.
-2. Propagate `verbose` flag to each call.
-3. Exit nicely on exceptions (missing keys, HTTP errors).
+1. Wire modules in `agent.run_agent(question, verbosity_level)`.
+2. Propagate `is_verbose` flag (derived from `verbosity_level`) to each module call.
+3. `run_agent` returns `(answer, urls)`.
+4. `main.py` handles printing based on `verbosity_level`.
+5. Exit nicely on exceptions (missing keys, HTTP errors).
 4. Commit: “Agent flow end-to-end.”
 
 ### **Chunk 7 – Local Tests**
@@ -128,9 +131,9 @@ Below is a **two-tier implementation roadmap**:
 ### **Chunk 9 – Polish Pass**
 
 1. Pin package versions (`requests>=2.31`, `chromadb>=0.4.14`, etc.).
-2. Validate `.env.example`.
-3. Ensure `--verbose` prints timestamps & colored headings if `rich` present.
-4. Tag release `v0.1.0`.
+2. Validate `.env.example` and create initial `config.yaml`.
+3. Ensure `--quiet`, default, and `--verbose` modes produce the correct output levels.
+4. Tag release `v0.1.0`. (Note: This chunk description is historical; config/verbosity added post-v0.1.0).
 5. Commit: “Polish & version bump.”
 
 ---

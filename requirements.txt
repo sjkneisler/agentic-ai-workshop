@@ -14,3 +14,4 @@ pytest    # Version not found in pip freeze output
 
 # Optional for nice output
 rich      # Version not found in pip freeze output
+PyYAML>=6.0 # For parsing config.yaml

@@ -21,10 +21,12 @@ Create a runnable Python project demonstrating a recursive research agent pipeli
 /
 ├── README.md
 ├── requirements.txt                 # Python ≥3.10, no poetry
-├── .env.example                     # SERPER_API_KEY, OPENAI_API_KEY, RAG_DOC_PATH
+├── .env.example                     # API Keys, RAG Path
+├── config.yaml                      # Agent behavior config (models, prompts, etc.) - NEW
 ├── main.py                          # CLI entrypoint
 ├── agent/
 │   ├── __init__.py
+│   ├── config.py                   # Config loader - NEW
 │   ├── clarifier.py                # clarify_question()
 │   ├── planner.py                  # plan_steps()
 │   ├── search.py                   # serper_search()
@@ -56,8 +58,8 @@ RAG_DOC_PATH=./my_docs    # optional user-supplied local document directory
 4. Search results → `search.py` (Serper API, mocked in tests)
 5. Optional RAG → `rag.py` (Chroma vector search over `RAG_DOC_PATH`)
 6. Reason over sources → `reasoner.py`
-7. Synthesize answer → `synthesizer.py`
-8. Print final answer. If `--verbose`, print each step’s intermediate output.
+7. Synthesize answer → `synthesizer.py` (using settings from `config.yaml`)
+8. Print final answer. Output detail controlled by `--quiet`, default, or `--verbose` flags. Default shows source URLs.
 
 ---
 
@@ -67,7 +69,8 @@ RAG_DOC_PATH=./my_docs    # optional user-supplied local document directory
 * No license file (private/internal use only)
 * If API keys are missing, script must fail gracefully with clear message
 * All functions must include docstrings specifying I/O expectations
-* `--verbose` mode must display reasoning steps and decision trace
+* Configuration primarily managed via `config.yaml` (behavior) and `.env` (secrets).
+* Output verbosity controlled by `--quiet` (minimal), default (answer + sources), and `--verbose` (all steps + sources).
 
 ---
 
@@ -95,10 +98,11 @@ python main.py
 ```
 
 3. **How It Works**: step-by-step diagram + explanation
-4. **Customize It**: edit individual agent modules
-5. **RAG Setup**: drop documents into `RAG_DOC_PATH` and rerun
-6. **Verbose Mode**: `python main.py --verbose`
-7. **Future Ideas**: LangGraph, FastAPI, MCP endpoints
+4. **Configuration**: Explain `config.yaml` for tuning behavior - NEW
+5. **Customize It**: Explain when to use `config.yaml` vs. editing Python code
+6. **RAG Setup**: drop documents into `RAG_DOC_PATH` and rerun
+7. **Verbosity Modes**: Explain `--quiet`, default, and `--verbose` - NEW
+8. **Future Ideas**: LangGraph, FastAPI, MCP endpoints
 
 ---
 

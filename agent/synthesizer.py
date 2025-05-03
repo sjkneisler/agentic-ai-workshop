@@ -8,6 +8,8 @@ if an API key is available. Falls back to echoing context otherwise.
 
 import os
 import warnings
+from .config import get_synthesizer_config # Import config loader
+
 try:
     import openai
     import tiktoken
@@ -17,10 +19,9 @@ except ImportError:
     warnings.warn("OpenAI libraries ('openai', 'tiktoken') not found. Synthesizer will fall back to basic context echo.")
 
 # --- Constants ---
-# Consider making the model configurable via env var or args
-DEFAULT_SYNTHESIS_MODEL = "gpt-3.5-turbo"
+# Model and other settings are now loaded from config.py
 
-def _count_tokens(text: str, model: str = DEFAULT_SYNTHESIS_MODEL) -> int:
+def _count_tokens(text: str, model: str) -> int: # Model passed as argument now
     """Counts tokens using tiktoken."""
     if not openai_available:
         return 0 # Cannot count tokens without tiktoken
@@ -53,29 +54,31 @@ def synthesize_answer(question: str, context: str, verbose: bool = False) -> str
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     final_answer = ""
+    synth_config = get_synthesizer_config() # Load config
 
     if openai_available and openai_api_key:
+        model_name = synth_config.get('model', 'gpt-3.5-turbo') # Get model from config
         if verbose:
-            print(f"Attempting synthesis using OpenAI model: {DEFAULT_SYNTHESIS_MODEL}")
+            print(f"Attempting synthesis using OpenAI model: {model_name}")
         try:
             # Initialize OpenAI client (consider doing this once globally if performance matters)
             client = openai.OpenAI(api_key=openai_api_key)
 
-            system_prompt = "You are a helpful research assistant. Synthesize a concise answer to the user's question based *only* on the provided context. Do not add information not present in the context. If the context is insufficient, say so."
+            system_prompt = synth_config.get('system_prompt', 'Synthesize a concise answer.') # Get prompt from config
             user_prompt = f"Question: {question}\n\nContext:\n{context}"
 
-            prompt_tokens = _count_tokens(system_prompt + user_prompt, DEFAULT_SYNTHESIS_MODEL)
+            prompt_tokens = _count_tokens(system_prompt + user_prompt, model=model_name) # Pass model name
             if verbose:
                 print(f"Estimated prompt tokens: {prompt_tokens}")
 
             response = client.chat.completions.create(
-                model=DEFAULT_SYNTHESIS_MODEL,
+                model=model_name, # Use model from config
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.7, # Adjust as needed
-                max_tokens=500   # Adjust as needed
+                temperature=synth_config.get('temperature', 0.7), # Use temp from config
+                max_tokens=synth_config.get('max_tokens', 500)   # Use max_tokens from config
             )
 
             final_answer = response.choices[0].message.content

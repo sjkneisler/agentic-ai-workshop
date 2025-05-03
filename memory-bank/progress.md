@@ -108,3 +108,14 @@ Thought for a couple of seconds
 * support RAG if user supplies docs + key,
 * pass `pytest` offline,
 * and let users tweak any single module in < 10 minutes.
+---
+
+#### ✅ Post-v0.1.0 Fixes & Enhancements
+
+* ✅ Fixed SSL certificate verification errors on macOS (`SSLError`).
+* ✅ Corrected `rich.Panel` printing in `main.py` for non-verbose modes.
+* ✅ Adjusted synthesizer prompt for more detailed answers.
+* ✅ Implemented `config.yaml` for agent behavior configuration (`PyYAML` added).
+* ✅ Refactored synthesizer and search modules to use `config.yaml`.
+* ✅ Implemented verbosity levels (`--quiet`, default, `--verbose`) in `main.py` and `agent/__init__.py`.
+* ✅ Updated `README.md` and Memory Bank files to reflect recent changes.
