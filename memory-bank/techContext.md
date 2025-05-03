@@ -32,5 +32,5 @@
 
 ## Dependencies
 
-- See `requirements.txt` for specific package versions (to be pinned later in the process).
+- See `requirements.txt` for specific package versions. Pinning was attempted during the v0.1.0 polish pass, though some versions might require manual verification based on the specific Python environment used.
 - Assumes standard Python installation and network access for API calls.
