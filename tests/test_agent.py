@@ -69,7 +69,7 @@ def test_run_agent_offline_mocked_search(
 
     # --- Run the agent ---
     test_question = "What is testing?"
-    final_answer = agent.run_agent(test_question, verbose=True) # Run with verbose for more output
+    final_answer, source_urls = agent.run_agent(test_question, verbosity_level=2) # Run with verbose (level 2) for more output
 
     # --- Assertions ---
     # 1. Check that mocked functions were called as expected
@@ -88,7 +88,7 @@ def test_run_agent_offline_mocked_search(
     # We could add more specific assertions on the arguments passed to synthesize if needed
 
     # 2. Check the final answer is what the mocked synthesizer returned
-    assert final_answer == "Synthesized answer based on mock search and RAG."
+    assert final_answer == "Synthesized answer based on mock search and RAG." # Check the first element of the tuple
 
     # Restore original RAG_DOC_PATH if we changed it (we didn't in this version)
     # if original_rag_path is None and "RAG_DOC_PATH" in os.environ:
@@ -117,13 +117,13 @@ def test_run_agent_with_rag_planned(mock_synthesize, mock_rag_init, mock_search,
         mock_synthesize.return_value = "Synthesized answer including RAG."
 
         test_question = "Tell me about RAG."
-        final_answer = agent.run_agent(test_question, verbose=True)
+        final_answer, source_urls = agent.run_agent(test_question, verbosity_level=2)
 
         # Assertions
         mock_search.assert_called_once_with(test_question, verbose=True)
         mock_rag_query.assert_called_once_with(test_question, verbose=True) # Crucial check
         mock_synthesize.assert_called_once()
-        assert final_answer == "Synthesized answer including RAG."
+        assert final_answer == "Synthesized answer including RAG." # Check the first element of the tuple
 
 
 # Add more tests as needed:
