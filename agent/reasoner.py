@@ -6,6 +6,13 @@ into a coherent context string suitable for synthesis.
 """
 from typing import List, Dict, Any
 
+# Shared Utilities (Logging)
+from .utils import print_verbose # Import shared logging
+
+# Agent State (for LangGraph node)
+from agent.state import AgentState # Import the shared state
+
+
 def reason_over_sources(search_results: List[Dict[str, Any]], rag_context: str, verbose: bool = False) -> str:
     """
     Reasons over the collected information from search and RAG by concatenating them.
@@ -20,12 +27,12 @@ def reason_over_sources(search_results: List[Dict[str, Any]], rag_context: str, 
         if no information was gathered.
     """
     if verbose:
-        print("--- Reasoning Over Sources ---")
-        print(f"Received {len(search_results)} search results.")
+        # Use imported print_verbose
+        print_verbose(f"Received {len(search_results)} search results.", title="Reasoning Over Sources")
         if rag_context:
-            print("Received RAG context.")
+            print_verbose("Received RAG context.", style="dim blue")
         else:
-            print("No RAG context received.")
+            print_verbose("No RAG context received.", style="yellow")
 
     combined_context_parts = []
 
@@ -45,11 +52,41 @@ def reason_over_sources(search_results: List[Dict[str, Any]], rag_context: str, 
     if not combined_context_parts:
         final_context = "No information gathered from search or RAG."
         if verbose:
-            print("No sources to reason over.")
+            print_verbose("No sources to reason over.", style="yellow")
     else:
         final_context = "\n\n---\n\n".join(combined_context_parts)
         if verbose:
-            print("Combined context generated.")
-            # print(f"Context:\n{final_context}") # Potentially too verbose
+            print_verbose("Combined context generated.", style="green")
+            # print_verbose(f"Context:\n{final_context}", style="dim") # Potentially too verbose
 
     return final_context
+
+# --- LangGraph Node ---
+
+def reason_node(state: AgentState) -> Dict[str, Any]:
+    """LangGraph node to reason over collected sources."""
+    is_verbose = state['verbosity_level'] == 2
+    if state.get("error"): # Skip if prior node failed
+         if is_verbose: print_verbose("Skipping reasoning due to previous error.", style="yellow")
+         return {}
+
+    if is_verbose: print_verbose("Entering Reasoning Node", style="magenta")
+
+    try:
+        # Ensure defaults if steps were skipped or failed partially
+        search_res = state.get('search_results', [])
+        rag_ctx = state.get('rag_context', "")
+
+        # Call the main logic function from this module
+        combined = reason_over_sources(search_res, rag_ctx, verbose=is_verbose)
+        # Verbose printing is handled within reason_over_sources
+        # Update the state
+        return {"combined_context": combined, "error": None}
+    except Exception as e:
+        error_msg = f"Reasoning step failed: {e}"
+        if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
+        # Update state with error
+        return {"error": error_msg}
+
+# Optional: Add reason_node to __all__
+# __all__ = ['reason_over_sources', 'reason_node']

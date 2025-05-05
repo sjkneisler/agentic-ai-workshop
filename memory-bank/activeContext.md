@@ -81,18 +81,33 @@ The current focus is on:
     - **Question Refinement:** A second LangChain chain synthesizes a refined question based on the original query and the user's answers (using `StrOutputParser`).
     - Falls back to the original question if `OPENAI_API_KEY` is missing, LangChain components fail to initialize, user cancels, or chain invocations fail.
     - Requires `langchain-openai`, `langchain-core` libraries and `OPENAI_API_KEY` in `.env` for clarification functionality.
+- **Refactored Agent Pipeline to LangGraph:**
+    - Added `langgraph` dependency to `requirements.txt`.
+    - Created `agent/state.py` to define the shared `AgentState` TypedDict.
+    - Refactored `agent/__init__.py` to define and compile a `StateGraph`.
+        - The graph orchestrates calls to node functions representing agent steps.
+        - `run_agent` now invokes the compiled LangGraph application.
+    - Moved node function definitions (`clarify_node`, `plan_node`, etc.) into their respective logic files (`agent/clarifier.py`, `agent/planner.py`, etc.).
+    - Updated Pydantic import in `agent/clarifier.py` to use `pydantic.v1` directly, resolving a deprecation warning.
+- **Centralized Shared Utilities:**
+    - Created `agent/utils.py`.
+    - Moved verbose logging logic (`print_verbose`, `RICH_AVAILABLE`, fallback `Panel`) to `utils.py`.
+    - Moved LLM initialization logic (`initialize_llm`) to `utils.py`.
+    - Moved token counting logic (`count_tokens`) to `utils.py`.
+    - Refactored all agent modules (`__init__.py`, `clarifier.py`, `planner.py`, `search.py`, `rag_utils/rag_query.py`, `reasoner.py`, `synthesizer.py`) to use the shared utilities from `utils.py`.
+- **Fixed Clarifier Bug:** Corrected an issue in `agent/clarifier.py` where `rich.Panel` was not rendering correctly during user interaction.
 
 ## Next Steps
 
 1.  **Install/Update Dependencies:**
-    *   Run `python3 -m pip install -r requirements.txt` (to ensure `PyYAML`, `langchain`, `langchain-community`, `langchain-openai`, `langchain-core`, `langchain-chroma`, `unstructured` are installed).
+    *   Run `python3 -m pip install -r requirements.txt` (to ensure `PyYAML`, `langchain` suite, `unstructured`, `langgraph` are installed).
 2.  **Configure Environment & Config:**
-    *   Ensure `.env` has valid `SERPER_API_KEY` and `OPENAI_API_KEY` (now required for RAG *and* LangChain Clarification).
+    *   Ensure `.env` has valid `SERPER_API_KEY` and `OPENAI_API_KEY` (required for RAG, Clarification, and Synthesis).
     *   Ensure `RAG_DOC_PATH` in `.env` points to a directory with `.txt` or `.md` files (including some with internal *and external* links for testing).
     *   Review/modify `config.yaml`, especially the RAG section (`rag_...` settings) and the new Clarifier section (`clarification_model`, `refinement_model`, etc.).
-3.  **Manual Testing (Focus on Clarifier & RAG):**
+3.  **Manual Testing (Focus on LangGraph Flow, Clarifier & RAG):**
     *   Delete the `.rag_store` directory if it exists from previous incompatible versions.
-    *   Run with default/verbose mode: `python3 main.py "..."`
+    *   Run with default/verbose mode: `python3 main.py "Your question here"`
     *   **Test Clarifier:**
         *   Ask ambiguous questions to trigger the clarification flow.
         *   Answer the follow-up questions in the terminal.
@@ -108,19 +123,21 @@ The current focus is on:
         *   Verify context from internal/external links appears as expected.
         *   Verify the "Sources Used" panel lists all sources correctly.
 4.  **Run Automated Tests:**
-    *   Execute `python3 -m pytest`. Tests interacting with RAG *and Clarifier* will likely need significant updates or mocking.
+    *   Execute `python3 -m pytest`. Tests will likely need significant updates or mocking to handle the LangGraph structure and updated module interactions.
 5.  **Address Issues:** Fix any bugs identified during testing.
-6.  **Consider Enhancements:** Review RAG performance, explore different Langchain splitters/loaders, or other goals.
+6.  **Consider Enhancements:** Review agent flow, RAG performance, explore different Langchain splitters/loaders, or other goals.
 
 ## Active Decisions & Considerations
 
 - **Configuration:** `config.yaml` is now the primary method for tuning common agent parameters (models, prompts, search count). `.env` remains for secrets.
 - **Verbosity:** Three distinct levels (`quiet`, `default`, `verbose`) control the CLI output. Default shows sources, verbose shows internal steps.
-- **Agent Output:** `run_agent` now returns both the answer and the list of source URLs.
+- **Agent Output:** `run_agent` still returns `(final_answer, web_source_urls, rag_source_paths)`, extracted from the final LangGraph state.
 - **SSL Fix:** The implemented SSL fix targets common macOS issues by explicitly using `certifi` bundle.
-- **Testing:** Automated tests (`pytest`) might need updates to accommodate the new configuration system and `run_agent` return type.
+- **Testing:** Automated tests (`pytest`) will need significant updates for the LangGraph structure.
 - **RAG:** RAG implementation uses Langchain Indexing API (`DirectoryLoader`, `SemanticChunker`, `OpenAIEmbeddings`, `Chroma`).
     - **Indexing:** Follows internal document links up to `rag_initial_link_follow_depth`. Stores resolved target file paths from internal links as a serialized string (`internal_linked_paths_str`) in metadata on chunks (due to Chroma limitations) before saving to Chroma. Does *not* fetch external links during indexing.
     - **Retrieval:** Performs initial semantic search. Optionally traverses internal links *between chunks* by deserializing the stored `internal_linked_paths_str` metadata and performing filtered searches (controlled by `rag_follow_internal_chunk_links`, `rag_internal_link_depth`, `rag_internal_link_k`). Optionally fetches external web links found in collected chunks on the fly (controlled by `rag_follow_external_links`). Combines all context.
 - **Agent Output:** `run_agent` now returns `(final_answer, web_source_urls, rag_source_paths)`. `main.py` displays both web and local sources (including fetched web URLs and sources from internally linked chunks).
-- **Clarification:** The agent now uses an interactive LangChain-based clarification step (`agent/clarifier.py`) if an `OPENAI_API_KEY` is provided. It uses `ChatOpenAI` and structured output parsing to determine if clarification is needed, prompts the user in the terminal with suggested questions, and then refines the query using another LangChain chain. This behavior can be tuned via `config.yaml`.
+- **Clarification:** The agent uses an interactive LangChain-based clarification step (`agent/clarifier.py`) if an `OPENAI_API_KEY` is provided. LLM initialization is now handled by the shared `agent/utils.initialize_llm`. User interaction rendering bug fixed. Pydantic v1 import updated.
+- **Agent Orchestration:** The main agent flow is now managed by a LangGraph `StateGraph` defined in `agent/__init__.py`. Node functions are defined in their respective modules.
+- **Shared Utilities:** Common functions for logging, LLM initialization, and token counting are centralized in `agent/utils.py`.

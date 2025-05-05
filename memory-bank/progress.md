@@ -135,3 +135,18 @@ Thought for a couple of seconds
 * ✅ Implemented RAG retrieval-time external web link fetching (configurable via `config.yaml`).
 * ✅ Refactored RAG logic into `agent/rag_utils/rag_initializer.py` and `agent/rag_utils/rag_query.py`.
 * ✅ Implemented interactive LangChain-based question clarification in `agent/clarifier.py` (uses `ChatOpenAI`, prompts user in terminal).
+---
+
+#### ✅ LangGraph & Utilities Refactor
+
+* ✅ Add `langgraph` dependency to `requirements.txt`.
+* ✅ Create `agent/state.py` for shared `AgentState`.
+* ✅ Refactor `agent/__init__.py` to define and compile LangGraph `StateGraph`.
+* ✅ Move node function definitions (`clarify_node`, etc.) to respective logic files.
+* ✅ Update Pydantic v1 import in `agent/clarifier.py`.
+* ✅ Create `agent/utils.py` for shared utilities.
+* ✅ Move logging logic (`print_verbose`) to `utils.py`.
+* ✅ Move LLM initialization (`initialize_llm`) to `utils.py`.
+* ✅ Move token counting (`count_tokens`) to `utils.py`.
+* ✅ Refactor all agent modules to use shared utilities from `utils.py`.
+* ✅ Fix `rich.Panel` rendering bug in `agent/clarifier.py`.

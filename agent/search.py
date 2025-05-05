@@ -8,8 +8,18 @@ import os
 import requests
 import json
 import certifi
+import warnings # Import warnings for error handling consistency
 from typing import List, Dict, Any, Optional
+
+# Shared Utilities (Logging)
+from .utils import print_verbose # Import shared logging
+
+# Config
 from .config import get_search_config # Import config loader
+
+# Agent State (for LangGraph node)
+from agent.state import AgentState # Import the shared state
+
 
 def serper_search(query: str, n: Optional[int] = None, verbose: bool = False) -> List[Dict[str, Any]]:
     """
@@ -32,8 +42,8 @@ def serper_search(query: str, n: Optional[int] = None, verbose: bool = False) ->
     num_results = n if n is not None else search_config.get('num_results', 5) # Use arg 'n' if provided, else config, else default 5
 
     if verbose:
-        print("--- Performing Web Search ---")
-        print(f"Searching for: {query} (n={num_results})")
+        # Use imported print_verbose
+        print_verbose(f"Searching for: {query} (n={num_results})", title="Performing Web Search")
 
     api_key = os.getenv("SERPER_API_KEY")
     if not api_key:
@@ -50,6 +60,7 @@ def serper_search(query: str, n: Optional[int] = None, verbose: bool = False) ->
     })
 
     results = []
+    response = None # Initialize response to None
     try:
         response = requests.post(search_url, headers=headers, data=payload, verify=certifi.where()) # Added verify parameter
         response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
@@ -64,20 +75,55 @@ def serper_search(query: str, n: Optional[int] = None, verbose: bool = False) ->
                     "snippet": item.get("snippet", "N/A")
                 })
         if verbose:
-            print(f"Found {len(results)} results via Serper.")
+            # Use imported print_verbose
+            print_verbose(f"Found {len(results)} results via Serper.", style="dim blue")
 
     except requests.exceptions.RequestException as e:
-        print(f"Error during Serper API call: {e}")
+        # Use imported print_verbose for errors too
+        print_verbose(f"Error during Serper API call: {e}", style="red")
         if verbose:
-            print(f"Response status: {response.status_code if 'response' in locals() else 'N/A'}")
-            print(f"Response text: {response.text if 'response' in locals() else 'N/A'}")
+            print_verbose(f"Response status: {response.status_code if response else 'N/A'}", style="red")
+            print_verbose(f"Response text: {response.text if response else 'N/A'}", style="red")
         # Return empty list on error
         results = []
     except json.JSONDecodeError:
-        print("Error decoding JSON response from Serper API.")
+        # Use imported print_verbose
+        print_verbose("Error decoding JSON response from Serper API.", style="red")
         if verbose:
-             print(f"Response text: {response.text if 'response' in locals() else 'N/A'}")
+             print_verbose(f"Response text: {response.text if response else 'N/A'}", style="red")
         results = []
 
 
     return results[:num_results] # Ensure we don't return more than requested if API gives more
+
+# --- LangGraph Node ---
+
+def search_node(state: AgentState) -> Dict[str, Any]:
+    """LangGraph node to perform web search."""
+    is_verbose = state['verbosity_level'] == 2
+    if state.get("error"): # Skip if prior node failed
+         if is_verbose: print_verbose("Skipping search due to previous error.", style="yellow")
+         return {}
+
+    if is_verbose: print_verbose("Entering Search Node", style="cyan")
+
+    try:
+        # Call the main logic function from this module
+        # Pass None for 'n' so it uses the config value by default
+        results = serper_search(state['clarified_question'], n=None, verbose=is_verbose)
+        urls = [result.get("link", "N/A") for result in results if result.get("link")]
+        # Verbose printing is handled within serper_search
+        # Update the state
+        return {"search_results": results, "web_source_urls": urls, "error": None}
+    except RuntimeError as e: # Catch the specific error raised for missing API key
+        error_msg = f"Search step failed: {e}"
+        if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
+        return {"error": error_msg}
+    except Exception as e:
+        error_msg = f"Search step failed with unexpected error: {e}"
+        if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
+        # Update state with error
+        return {"error": error_msg}
+
+# Optional: Add search_node to __all__
+# __all__ = ['serper_search', 'search_node']

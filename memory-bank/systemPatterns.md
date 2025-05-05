@@ -13,13 +13,13 @@ Below is a **two-tier implementation roadmap**:
 | Chunk # | Deliverable                     | Purpose                                                                                      |
 | ------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
 | **0**   | *Repo Bootstrap*                | Git repo initialized with layout skeleton, config, and minimal tooling.                      |
-| **1**   | *Core Runtime Skeleton*         | `main.py` CLI shell + `agent/` package with empty module stubs & docstrings.                 |
-| **2**   | *Serper Search Integration*     | Working `search.py` that calls Serper, env-driven.                                           |
-| **3**   | *RAG Skeleton (Langchain)*      | `rag.py` using Langchain (Loaders, Splitter, Embeddings, Chroma) to load/query corpus.       |
-| **4**   | *Reasoning + Synthesis Modules* | Implement `reasoner.py` and `synthesizer.py` (single-pass, concise default / verbose trace). |
-| **5**   | *Planner & Clarifier*           | Simple rule-based planner + optional clarifier prompt.                                       |
-| **6**   | *CLI Wiring & Verbose Flag*     | Connect modules in `main.py`; add `--verbose` option; integrate error handling.              |
-| **7**   | *Local Tests*                   | `pytest` with mocked Serper fixture & RAG skip logic.                                        |
+| **1**   | *Core Runtime Skeleton*         | `main.py` CLI shell + `agent/` package with module stubs & initial `utils.py`, `state.py`. |
+| **2**   | *Serper Search Integration*     | Working `search.py` (`serper_search`, `search_node`) that calls Serper, env-driven.          |
+| **3**   | *RAG Skeleton (Langchain)*      | `rag_utils` (`initializer`, `query` with `rag_node`) using Langchain. `rag.py` interface.    |
+| **4**   | *Reasoning + Synthesis Modules* | Implement `reasoner.py` (`reason_node`) and `synthesizer.py` (`synthesize_node`).            |
+| **5**   | *Planner & Clarifier*           | Implement `planner.py` (`plan_node`) and `clarifier.py` (`clarify_node`).                    |
+| **6**   | *LangGraph Wiring*              | Define & compile `StateGraph` in `agent/__init__.py`, connecting nodes. `main.py` calls `run_agent`. |
+| **7**   | *Local Tests*                   | `pytest` with mocked Serper fixture & RAG skip logic (needs update for LangGraph).           |
 | **8**   | *README & Docs*                 | Populate README quick-start, how-it-works, customize, verbose, RAG setup.                    |
 | **9**   | *Polish Pass*                   | Verify `.env.example`, print-styles, error messages, and requirements versions.              |
 
@@ -37,8 +37,10 @@ Below is a **two-tier implementation roadmap**:
 
 ### **Chunk 1 – Core Runtime Skeleton**
 
-1. `agent/__init__.py` → expose high-level `run_agent(question, verbosity_level)` stub (returns answer, urls).
-2. In each empty module (`clarifier.py`, `planner.py`, etc.) add:
+1. Create `agent/utils.py` with initial logging setup (`print_verbose`, `RICH_AVAILABLE`, `Panel`).
+2. Create `agent/state.py` with `AgentState` TypedDict definition.
+3. `agent/__init__.py` → expose high-level `run_agent(question, verbosity_level)` stub. Import `AgentState`, `utils`.
+4. In each logic module (`clarifier.py`, `planner.py`, etc.) add:
 
    ```python
    """Module purpose.
@@ -54,21 +56,22 @@ Below is a **two-tier implementation roadmap**:
    import argparse, agent
    # parse --quiet/--verbose, prompt user, call agent.run_agent(), handle output based on verbosity
    ```
-   4. Update `requirements.txt` with minimum essentials: `python-dotenv`, `rich` (for color logs), `pytest`, `PyYAML`.
-5. Commit: “Core skeleton with CLI shell.”
+   4. Update `requirements.txt` with minimum essentials: `python-dotenv`, `rich`, `pytest`, `PyYAML`, `langgraph`, `langchain-core`.
+5. Commit: “Core skeleton with LangGraph setup, state, utils.”
 
 ### **Chunk 2 – Serper Search Integration**
 
 1. Add `requests` to requirements.
-2. Implement `serper_search(query, n=None, verbose=False)`:
+2. Implement `serper_search(query, n=None, verbose=False)` using `utils.print_verbose`.
+3. Implement `search_node(state: AgentState)` wrapper using `serper_search`.
 
    * Read `SERPER_API_KEY` via `dotenv` or `os.getenv`.
    * If missing → `RuntimeError` with clear msg.
    * Use `n` if provided, otherwise get `num_results` from `config.yaml` via `agent/config.py`.
    * Build POST to `https://serpapi.serper.dev/search`.
    * Return list of dicts (`title`, `snippet`, `url`).
-3. Add docstring with API reference.
-4. Commit: “Working Serper search module.”
+3. Add docstrings.
+4. Commit: “Working Serper search module with LangGraph node.”
 
 ### **Chunk 3 – RAG Skeleton (Langchain Implementation)**
 
@@ -88,66 +91,74 @@ Below is a **two-tier implementation roadmap**:
         * Create store using `Chroma.from_documents(...)` and persist.
      * Update internal state based on success/failure.
 3. Create `agent/rag_utils/rag_query.py`:
-   * Implement `query_vector_store(query, n_results, verbose)`:
+   * Implement `query_vector_store(query, n_results, verbose)` using `utils.print_verbose`:
      * Use `is_rag_enabled()` and `get_vector_store()` from `rag_initializer`.
-     * **Retrieval Logic:**
+     * **Retrieval Logic (as before):**
         * Perform initial semantic search using the vector store retriever.
         * **(Optional) Internal Chunk Traversal:** If enabled, use `internal_linked_paths_str` metadata, deserialize, perform filtered searches, collect linked chunks.
         * **(Optional) External Web Fetching:** If enabled, extract web links from all collected chunks, fetch content using `requests`/`BeautifulSoup`.
         * Combine context from all sources (initial chunks, linked chunks, web pages).
         * Extract and return unique source paths/URLs.
-4. Create `agent/rag_utils/ingestion.py` (if not already present) with `extract_links`, `is_web_link`, `resolve_link`.
-5. Update `agent/rag.py` to be an interface:
-   * Import `initialize_rag`, `is_rag_enabled` from `agent.rag_utils.rag_initializer`.
-   * Import `query_vector_store` from `agent.rag_utils.rag_query`.
-   * Expose these functions using `__all__`.
-6. Commit: “Refactor RAG logic into rag_utils initializer and query modules.”
+4. Implement `rag_node(state: AgentState)` wrapper using `query_vector_store`.
+5. Create `agent/rag_utils/ingestion.py` (if not already present) with link helpers.
+6. Update `agent/rag.py` to be an interface (imports `query_vector_store`, `is_rag_enabled`, `initialize_rag`).
+7. Commit: “Refactor RAG logic into rag_utils with LangGraph node.”
 
 ### **Chunk 4 – Reasoning + Synthesis**
 
-1. `reasoner.py`: simple concatenation of snippets + optional RAG text into “context” string.
-2. `synthesizer.py`:
+1. `reasoner.py`: Implement `reason_over_sources()` using `utils.print_verbose`. Implement `reason_node()` wrapper.
+2. `synthesizer.py`: Implement `synthesize_answer()` using `utils.initialize_llm`, `utils.count_tokens`, `utils.print_verbose`. Implement `synthesize_node()` wrapper.
 
    * Single OpenAI call (model, prompt, temp, max_tokens from `config.yaml` via `agent/config.py` unless key missing → fallback to echo).
    * If no key: return formatted bullet list of sources as placeholder.
 3. Provide `synthesize_answer(question, context, verbose=False)`; if verbose print token counts.
-4. Commit: “Initial reasoning & synthesis.”
+3. Commit: “Implement reasoning & synthesis modules with LangGraph nodes.”
 
 ### **Chunk 5 – Planner & Clarifier**
 
-1. `clarifier.py` → Implement interactive LangChain clarification:
-   * Check for `OPENAI_API_KEY`. Skip if missing or LangChain components fail to initialize.
-   * Use a LangChain chain (`ChatOpenAI`, `ChatPromptTemplate`, `JsonOutputParser` with Pydantic model) to check if the question needs clarification and get specific questions to ask (model/temp from `config.yaml`).
+1. `clarifier.py` → Implement `clarify_question()` using `utils.initialize_llm`, `utils.print_verbose`:
+   * Check for `OPENAI_API_KEY` via `initialize_llm`. Skip if missing/fails.
+   * Use LangChain chains (`ChatPromptTemplate`, `JsonOutputParser`, `StrOutputParser`) with initialized LLMs to check clarification needs and refine question.
    * If clarification needed:
        * Loop through questions, prompt user via `input()` in the terminal.
        * Collect user answers.
        * Use another LangChain chain (`ChatOpenAI`, `ChatPromptTemplate`, `StrOutputParser`) with the original question + Q&A to synthesize a refined question (model/temp from `config.yaml`).
    * Return the refined question, or the original if clarification skipped/failed/cancelled.
-   * Add `langchain-openai`, `langchain-core` to requirements.
+   * Add `langchain-openai`, `langchain-core`, `pydantic` (v1 namespace used) to requirements.
+   * Implement `clarify_node()` wrapper.
 2. `planner.py`:
-   * Rule: always `"search"`; add `"rag"` if `RAG_DOC_PATH` exists and is a directory.
-   * Use the (potentially refined) question from the clarifier (though the content isn't used for planning *yet*).
-   * Return list of steps.
-3. Commit: “Implement interactive LangChain clarifier and simple planner.”
+   * Implement `plan_steps()` using `utils.print_verbose`.
+   * Implement `plan_node()` wrapper.
+3. Commit: “Implement planner and clarifier modules with LangGraph nodes.”
 
-### **Chunk 6 – CLI Wiring & Verbose Flag**
+### **Chunk 6 – LangGraph Wiring**
 
-1. Wire modules in `agent.run_agent(question, verbosity_level)`.
-2. Propagate `is_verbose` flag (derived from `verbosity_level`) to each module call.
-3. `run_agent` returns `(answer, urls)`.
-4. `main.py` handles printing based on `verbosity_level`.
-5. Exit nicely on exceptions (missing keys, HTTP errors).
-4. Commit: “Agent flow end-to-end.”
+1. In `agent/__init__.py`:
+   * Import `AgentState`, node functions, `StateGraph`, `END`, `utils.print_verbose`.
+   * Define conditional edge logic (`should_execute_step`, `after_search_decision`, `after_rag_decision`).
+   * Define `error_handler_node`.
+   * Build `workflow = StateGraph(AgentState)`.
+   * Add all imported nodes and the error handler node.
+   * Define entry point and all edges (including conditional).
+   * Compile the graph: `app = workflow.compile()`.
+2. Update `agent.run_agent()`:
+   * Prepare initial `AgentState`.
+   * Invoke `app.invoke(initial_state)`.
+   * Handle potential graph execution errors.
+   * Extract results from final state.
+   * Return `(answer, web_urls, rag_paths)`.
+3. Update `main.py` to call the (now LangGraph-based) `agent.run_agent()`.
+4. Commit: “Wire LangGraph agent flow in __init__.py.”
 
 ### **Chunk 7 – Local Tests**
 
 1. Fixture `mock_serper.json` with 2 fake results.
 2. In `test_agent.py`:
 
-   * Monkeypatch `search.serper_search` to return mock.
-   * Pass dummy question → ensure final answer string present.
+   * Update tests to potentially mock node functions or test the graph invocation with specific initial states. (Significant changes likely needed).
+   * Pass dummy question → ensure final answer string present in final state.
 3. Skip RAG test if no docs folder.
-4. Commit: “Offline pytest coverage.”
+4. Commit: “Update pytest coverage for LangGraph structure (initial).”
 
 ### **Chunk 8 – README & Docs**
 
@@ -159,9 +170,9 @@ Below is a **two-tier implementation roadmap**:
 
 1. Pin package versions (`requests>=2.31`, `chromadb>=0.4.14`, etc.).
 2. Validate `.env.example` and create initial `config.yaml`.
-3. Ensure `--quiet`, default, and `--verbose` modes produce the correct output levels.
-4. Tag release `v0.1.0`. (Note: This chunk description is historical; config/verbosity added post-v0.1.0).
-5. Commit: “Polish & version bump.”
+3. Ensure `--quiet`, default, and `--verbose` modes produce the correct output levels via `utils.print_verbose` and `main.py` logic.
+4. Update `README.md` to reflect LangGraph architecture and `utils.py`.
+5. Commit: “Final polish and documentation update for LangGraph refactor.”
 
 ---
 

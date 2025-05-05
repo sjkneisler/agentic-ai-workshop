@@ -15,6 +15,7 @@ langchain-chroma # Updated Chroma integration
 unstructured # Dependency for UnstructuredMarkdownLoader
 markdown
 langchain-experimental
+langgraph # For building stateful, multi-actor applications
 
 # Testing
 pytest    # Version not found in pip freeze output

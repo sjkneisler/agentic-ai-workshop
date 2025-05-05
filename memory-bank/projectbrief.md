@@ -21,27 +21,29 @@ Create a runnable Python project demonstrating a recursive research agent pipeli
 ```
 /
 ├── README.md
-├── requirements.txt                 # Python ≥3.10, no poetry
+├── requirements.txt                 # Python ≥3.10, includes langgraph
 ├── .env.example                     # API Keys, RAG Path
-├── config.yaml                      # Agent behavior config (models, prompts, etc.) - NEW
+├── config.yaml                      # Agent behavior config (models, prompts, etc.)
 ├── main.py                          # CLI entrypoint
 ├── agent/
-│   ├── __init__.py
-│   ├── config.py                   # Config loader - NEW
-│   ├── clarifier.py                # clarify_question()
-│   ├── planner.py                  # plan_steps()
-│   ├── search.py                   # serper_search()
-│   ├── rag.py                      # query_vector_store() (Uses Langchain)
-│   ├── rag_utils/                  # RAG utilities - NEW
-│   │   ├── __init__.py             # Make it a package (optional but good practice)
+│   ├── __init__.py                 # Defines LangGraph graph, imports nodes
+│   ├── state.py                    # Defines AgentState TypedDict - NEW
+│   ├── utils.py                    # Shared utilities (logging, LLM init, etc.) - NEW
+│   ├── config.py                   # Config loader
+│   ├── clarifier.py                # clarify_question(), clarify_node()
+│   ├── planner.py                  # plan_steps(), plan_node()
+│   ├── search.py                   # serper_search(), search_node()
+│   ├── rag.py                      # RAG interface (imports from rag_utils)
+│   ├── rag_utils/                  # RAG utilities
+│   │   ├── __init__.py
 │   │   ├── ingestion.py            # Link parsing/resolution
-│   │   ├── rag_initializer.py      # RAG setup/state - NEW
-│   │   └── rag_query.py            # RAG querying - NEW
-│   ├── reasoner.py                 # reason_over_sources()
-│   └── synthesizer.py              # synthesize_answer()
+│   │   ├── rag_initializer.py      # RAG setup/state
+│   │   └── rag_query.py            # query_vector_store(), rag_node() - UPDATED
+│   ├── reasoner.py                 # reason_over_sources(), reason_node()
+│   └── synthesizer.py              # synthesize_answer(), synthesize_node()
 └── tests/
     ├── mock_serper.json            # fixture
-    └── test_agent.py
+    └── test_agent.py               # Needs updates for LangGraph
 ```
 
 ---
@@ -56,16 +58,35 @@ RAG_DOC_PATH=./my_docs    # optional user-supplied local document directory
 
 ---
 
-### 🚀 Agent Flow (main.py)
+### 🚀 Agent Flow (LangGraph in agent/__init__.py)
 
-1. Prompt user: `input("🔍 Question: ")`
-2. Clarify input → `clarifier.py` (Uses LangChain; may interactively prompt user for more info if needed and `OPENAI_API_KEY` is set). Returns original or refined question.
-3. Plan next steps → `planner.py` (Uses the clarified/refined question) → returns e.g. `["search", "rag"]`
-4. Search results → `search.py` (Uses the clarified/refined question; Serper API, mocked in tests)
-5. Optional RAG → `rag.py` (Uses the clarified/refined question. Indexes local docs, storing internal link paths as serialized string in metadata for Chroma compatibility. Retrieves via semantic search, optionally traverses internal chunk links using deserialized metadata, optionally fetches external web links found in context. All controlled by `config.yaml`)
-6. Reason over sources → `reasoner.py` (Uses search results and RAG context)
-7. Synthesize answer → `synthesizer.py` (Uses the clarified/refined question and combined context; uses settings from `config.yaml`)
-8. Print final answer. Output detail controlled by `--quiet`, default, or `--verbose` flags. Default shows web and local source paths.
+1.  **`main.py`:** Prompts user, gets verbosity level, calls `agent.run_agent(question, verbosity_level)`.
+2.  **`agent.run_agent()`:**
+    *   Initializes the `AgentState` TypedDict (`agent/state.py`).
+    *   Invokes the compiled LangGraph application (`app`) with the initial state.
+3.  **LangGraph Execution (`app`):**
+    *   **Entry Point:** `clarify_node` (`agent/clarifier.py`) - Uses LangChain (via `agent/utils.py`) and potentially user interaction to refine the question. Updates `clarified_question` in state.
+    *   **Edge:** `clarify_node` -> `plan_node`.
+    *   **Node:** `plan_node` (`agent/planner.py`) - Determines steps (e.g., `["search", "rag"]`). Updates `planned_steps` in state.
+    *   **Conditional Edge:** Based on `planned_steps`:
+        *   If "search": -> `search_node`.
+        *   If only "rag": -> `rag_node`.
+        *   If neither: -> `reason_node`.
+        *   If error: -> `error_handler`.
+    *   **Node:** `search_node` (`agent/search.py`) - Performs Serper search. Updates `search_results` and `web_source_urls` in state.
+    *   **Conditional Edge:** After `search_node`:
+        *   If "rag" in `planned_steps`: -> `rag_node`.
+        *   Else: -> `reason_node`.
+        *   If error: -> `error_handler`.
+    *   **Node:** `rag_node` (`agent/rag_utils/rag_query.py`) - Performs RAG query. Updates `rag_context` and `rag_source_paths` in state.
+    *   **Conditional Edge:** After `rag_node`: -> `reason_node` (or `error_handler` if error).
+    *   **Node:** `reason_node` (`agent/reasoner.py`) - Combines search/RAG results. Updates `combined_context` in state.
+    *   **Conditional Edge:** After `reason_node`: -> `synthesize_node` (or `error_handler` if error).
+    *   **Node:** `synthesize_node` (`agent/synthesizer.py`) - Generates final answer using LLM (via `agent/utils.py`). Updates `final_answer` in state.
+    *   **Conditional Edge:** After `synthesize_node`: -> `END` (or `error_handler` if error).
+    *   **Node:** `error_handler` - Catches errors from nodes, sets error message in `final_answer`. -> `END`.
+4.  **`agent.run_agent()`:** Extracts `final_answer`, `web_source_urls`, `rag_source_paths` from the final state returned by the graph invocation.
+5.  **`main.py`:** Prints the final answer and sources based on the verbosity level.
 
 ---
 
@@ -75,8 +96,8 @@ RAG_DOC_PATH=./my_docs    # optional user-supplied local document directory
 * No license file (private/internal use only)
 * If API keys are missing, script must fail gracefully with clear message
 * All functions must include docstrings specifying I/O expectations
-* Configuration primarily managed via `config.yaml` (behavior) and `.env` (secrets).
-* Output verbosity controlled by `--quiet` (minimal), default (answer + sources), and `--verbose` (all steps + sources).
+* Configuration primarily managed via `config.yaml` (behavior) and `.env` (secrets). Shared utilities (`agent/utils.py`) handle LLM initialization and logging based on config/env.
+* Output verbosity controlled by `--quiet` (minimal), default (answer + sources), and `--verbose` (node execution logs + sources).
 
 ---
 
@@ -116,7 +137,7 @@ python main.py
 
 * Plug `search.py` into other web APIs as desired
 * Wrap `main.py` into a FastAPI service for web UI
-* Convert the agent steps to LangGraph nodes with dynamic state edge control
+* Convert the agent steps to LangGraph nodes with dynamic state edge control - **DONE**
 * MCP endpoint wrapper for use in Cursor or other toolchains
 
 ---

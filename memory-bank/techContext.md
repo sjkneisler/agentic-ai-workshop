@@ -19,6 +19,7 @@
     - `tiktoken`: For token counting (used with OpenAI/Langchain).
     - `rich` (optional): For enhanced terminal output (colors, formatting).
     - `certifi`: Used internally for SSL certificate handling.
+    - `langgraph`: For orchestrating the agent workflow as a state graph. - NEW
 - **Testing:** `pytest`
 - **External APIs:**
     - Serper API (for web search results)
@@ -27,7 +28,7 @@
 ## Development Setup
 
 - Clone the repository.
-- Install dependencies: `pip install -r requirements.txt` (includes `PyYAML`).
+- Install dependencies: `pip install -r requirements.txt` (includes `PyYAML`, `langgraph`, etc.).
 - Configure environment variables by copying `.env.example` to `.env` and filling in API keys (`SERPER_API_KEY`, `OPENAI_API_KEY`).
 - Configure agent behavior by creating/editing `config.yaml` (see README for options). - NEW
 - Optionally, specify `RAG_DOC_PATH` in `.env` to point to a directory of local documents for RAG.
@@ -41,6 +42,6 @@
 
 ## Dependencies
 
-- See `requirements.txt` for specific packages and versions (includes `PyYAML`, `langchain` suite, `unstructured`, `requests`, `beautifulsoup4`, etc.). Pinning should be reviewed/updated.
+- See `requirements.txt` for specific packages and versions (includes `PyYAML`, `langchain` suite, `langgraph`, `unstructured`, `requests`, `beautifulsoup4`, etc.). Pinning should be reviewed/updated.
 - Assumes standard Python installation and network access for API calls and dependency installation.
 - SSL certificate verification relies on the `certifi` package.
