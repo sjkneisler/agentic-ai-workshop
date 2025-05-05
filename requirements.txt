@@ -5,6 +5,7 @@ requests-html # Added for fetching full page content
 lxml[html_clean] # Added dependency for requests-html cleaner
 PyYAML>=6.0 # For parsing config.yaml
 
+numpy<2.0 # Added to ensure compatibility with libraries built on NumPy 1.x
 # OpenAI related
 openai==1.70.0
 tiktoken==0.9.0

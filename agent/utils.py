@@ -108,6 +108,46 @@ def initialize_llm(model_config_key: str, temp_config_key: str, default_model: s
         warnings.warn(f"Failed to initialize ChatOpenAI model '{model_config_key}': {e}")
         return None
 
+try:
+    from langchain_openai import OpenAIEmbeddings
+    EMBEDDINGS_AVAILABLE = True
+except ImportError:
+    EMBEDDINGS_AVAILABLE = False
+    class OpenAIEmbeddings: pass # Dummy for type hinting
+
+def initialize_embedding_model(default_model: str = 'text-embedding-3-small') -> Optional[OpenAIEmbeddings]:
+    """
+    Initializes an OpenAIEmbeddings instance based on config values.
+
+    Args:
+        default_model: Default embedding model name if not in config.
+
+    Returns:
+        An OpenAIEmbeddings instance or None if unavailable/misconfigured.
+    """
+    if not EMBEDDINGS_AVAILABLE or not OPENAI_AVAILABLE:
+        warnings.warn("OpenAI/LangChain libraries for embeddings not available.")
+        return None
+
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        warnings.warn("OPENAI_API_KEY not found in environment variables for embeddings.")
+        return None
+
+    try:
+        # Assuming config structure like: embedding: { model_name: '...' }
+        embedding_config = get_config_value('embedding', {})
+        model_name = embedding_config.get('model_name', default_model)
+
+        embeddings = OpenAIEmbeddings(
+            model=model_name,
+            api_key=openai_api_key
+            # Add other parameters like chunk_size if needed from config
+        )
+        return embeddings
+    except Exception as e:
+        warnings.warn(f"Failed to initialize OpenAIEmbeddings model: {e}")
+        return None
 def count_tokens(text: str, model: str = 'gpt-4o-mini') -> int:
     """Counts tokens using tiktoken, using a default model if needed."""
     if not OPENAI_AVAILABLE:

@@ -130,7 +130,8 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
                 action = line.split(":", 1)[1].strip().upper()
                 action_found = True
             elif line.lower().startswith("argument:") and not argument_found:
-                argument = line.split(":", 1)[1].strip()
+                # MODIFIED LINE: Strip surrounding quotes as well
+                argument = line.split(":", 1)[1].strip().strip('"')
                 if argument.lower() == 'none':
                     argument = None # Handle explicit None
                 argument_found = True
@@ -143,7 +144,7 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
              warnings.warn(f"LLM returned invalid action: '{action}'. Defaulting to STOP.")
              action = "STOP"
              argument = None # Clear argument if action is invalid
-        
+
         # Validate argument presence/absence
         if action in ["SEARCH", "RETRIEVE_CHUNKS"] and not argument:
              warnings.warn(f"Action '{action}' requires an argument, but none was provided. Defaulting to STOP.")
@@ -187,6 +188,10 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
             update_dict["current_query"] = None
             update_dict["url_to_fetch"] = None
             update_dict["search_results"] = []
+
+        # ADDED LOGGING:
+        if is_verbose:
+            print_verbose(f"Reasoner node returning update: {update_dict}", style="yellow")
 
         return update_dict
 

@@ -31,3 +31,9 @@ class AgentState(TypedDict):
     # Control/Meta fields
     verbosity_level: int
     error: Optional[str] # To capture errors within the graph flow
+# Fields updated by the reasoner/loop control
+    current_iteration: int
+    next_action: Optional[str]
+    current_query: Optional[str]
+    url_to_fetch: Optional[str]
+    retrieved_chunks: List[Dict[str, Any]] # Chunks retrieved by retrieve node
