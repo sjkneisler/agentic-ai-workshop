@@ -2,34 +2,36 @@
 
 ## Why This Project Exists
 
-This project aims to create a clear, runnable demonstration of a research agent pipeline using LangGraph and tool-using agents. It serves as an educational tool and a foundation for more complex agentic systems.
+This project aims to create a clear, runnable demonstration of a research agent pipeline using LangGraph. It serves as an educational tool and a foundation for more complex agentic systems, showcasing a deep research loop involving web fetching, session-based vector storage, iterative retrieval/summarization, and citation handling.
 
 ## Problems It Solves
 
-- Provides a practical example of an agentic workflow (Clarify+Outline -> Reason(Tool Use) -> Synthesize).
-- Offers a modular structure that's easy to understand and extend.
+- Provides a practical example of a more sophisticated agentic workflow (Clarify+Outline -> Reason -> [Search -> Fetch -> Chunk/Embed -> Retrieve -> Summarize] -> Consolidate -> Synthesize).
+- Offers a modular structure using LangGraph nodes that's easy to understand and extend.
+- Demonstrates techniques like session-based vector stores, source-grounded summarization, and citation post-processing.
 - Lowers the barrier to entry for experimenting with research agents by using standard Python and LangChain/LangGraph.
 
-## How It Should Work
+## How It Should Work (Updated for Deep Research Loop)
 
 - The agent takes a user's question via a command-line interface (CLI).
-- The agent's workflow is orchestrated by LangGraph (`agent/__init__.py`), defining a state machine with nodes for each step:
-    - **Clarification Node (`agent/clarifier.py`):** Uses LangChain components (initialized via `agent/utils.py`) to determine if the initial question is ambiguous. If so, it suggests specific follow-up questions, prompts the user for answers in the terminal, and then uses another LangChain chain to synthesize a refined question *and* generate a basic Markdown research outline (`plan_outline`). Requires `langchain-openai`, `langchain-core`, an `OPENAI_API_KEY`, and uses models/settings from `config.yaml`. If clarification isn't needed or possible, it uses the original question and generates a default outline. Updates `clarified_question` and `plan_outline` state.
-    - **Reasoning Node (`agent/reasoner.py`):** Initializes and runs an iterative LangChain agent (e.g., OpenAI Tools Agent).
-        - Receives `clarified_question` and `plan_outline` from state.
-        - Uses `web_search` (from `agent/search.py`) and `local_document_search` (RAG, from `agent/rag_utils/rag_query.py`) as tools.
-        - Iteratively calls tools based on the question/outline to gather information, using intermediate results.
-        - Runs up to `max_iterations` (from `config.yaml`).
-        - Requires `OPENAI_API_KEY` for the agent's LLM. Tool usage may require `SERPER_API_KEY` (search) or `OPENAI_API_KEY` (RAG).
-        - Updates `combined_context` state with the agent's final synthesized information.
-    - **Synthesis Node (`agent/synthesizer.py`):** Generates the final answer using an LLM (initialized via `agent/utils.py`) based on the `clarified_question` and the `combined_context` from the reasoner. Requires `OPENAI_API_KEY` and uses settings from `config.yaml`. Updates `final_answer` state.
+- The agent's workflow is orchestrated by LangGraph (`agent/__init__.py`), defining a state machine with nodes primarily in `agent/nodes/`:
+    - **Clarification Node (`clarifier.py`):** Uses LangChain components to refine the question and generate a Markdown research outline (`plan_outline`). Updates `clarified_question` and `plan_outline` state.
+    - **Reasoning Node (`reasoner.py`):** Acts as the central decision-maker. Based on the question, outline, current notes, and iteration count, it decides the `next_action` (SEARCH, FETCH, RETRIEVE_CHUNKS, CONSOLIDATE, STOP) and sets necessary arguments (`current_query`, `url_to_fetch`) in the state.
+    - **Search Node (`search.py`):** Executes a web search via `agent.search.serper_search` using `current_query`. Updates `search_results`. Returns to Reasoner.
+    - **Fetch Node (`fetch.py`):** Fetches full HTML content from `url_to_fetch` using the `agent.tools.fetch.fetch_url` tool. Updates `fetched_docs`. Proceeds to Chunk/Embed.
+    - **Chunk/Embed Node (`chunk_embed.py`):** Takes `fetched_docs`, chunks the HTML, generates embeddings (using OpenAI via `utils.py`), and adds them to the `session_vector_store` (in-memory Chroma). Clears `fetched_docs`. Returns to Reasoner.
+    - **Retrieve Node (`retrieve.py`):** Queries the `session_vector_store` using `current_query`. Updates `retrieved_chunks`. Proceeds to Summarize.
+    - **Summarize Node (`summarize.py`):** Takes `retrieved_chunks`, uses a smaller LLM (via `utils.py`) to generate a concise note with detailed embedded source citations (e.g., `[Source URL='...', Title='...', Chunk=...]`). Appends note to `notes`. Clears `retrieved_chunks`. Returns to Reasoner.
+    - **Consolidate Node (`consolidate.py`):** Takes all `notes`, re-ranks them against the `clarified_question` using a sentence-transformer cross-encoder. Selects the top N notes and formats them into `combined_context`. Proceeds to Synthesize.
+    - **Synthesis Node (`synthesizer.py`):** Generates the final answer using a primary LLM (via `utils.py`) based on `clarified_question` and `combined_context` (curated notes). Preserves detailed citations during generation, then post-processes the answer to create a numbered reference list and replace inline citations with numbers (e.g., `[ref:1]`). Updates `final_answer`.
 - The LangGraph application (`app`) is invoked by `agent.run_agent()`.
-- It utilizes external APIs (Serper for search tool, OpenAI via LangChain/utils for LLM tasks and RAG tool) configured via `.env` (API keys) and `config.yaml` (models, prompts, RAG settings, clarification settings, reasoner settings).
-- The final synthesized answer (or error message) from the graph's final state is printed to the console. Output detail is controlled via `--quiet`, default, and `--verbose` flags. Source tracking from the reasoner's tool calls is currently not implemented.
+- It utilizes external APIs (Serper for search, OpenAI for LLMs/embeddings) configured via `.env` (API keys) and `config.yaml` (models, prompts, component settings).
+- The final synthesized answer (with references) or error message is printed to the console. Output detail is controlled via CLI flags.
 
 ## User Experience Goals
 
-- **Simplicity:** Easy to set up and run with standard Python tooling.
-- **Clarity:** The agent's flow and the code for each module should be straightforward to understand (though the reasoner is now more complex).
-- **Extensibility:** Users should feel empowered to modify or replace individual agent modules or add tools to the reasoner.
-- **Graceful Failure:** The agent should provide clear error messages if required configurations (like API keys) are missing.
+- **Simplicity:** Relatively easy to set up and run with standard Python tooling.
+- **Clarity:** The agent's flow and the code for each module should be understandable, demonstrating a clear research pattern.
+- **Extensibility:** Users should feel empowered to modify node behavior (e.g., prompts via config), add tools, or integrate other components (like the existing RAG).
+- **Graceful Failure:** The agent should provide clear error messages if required configurations or dependencies are missing.
+- **Transparency:** Verbose mode should allow users to follow the decision-making and data flow through the graph nodes.

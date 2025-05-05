@@ -2,73 +2,76 @@
 
 ## Current Work Focus
 
-The agent pipeline has undergone a major refactoring:
-- The Planner node has been removed.
-- The Clarifier node now generates a Markdown outline in addition to refining the question.
-- The Reasoner node has been transformed into an iterative, tool-using agent (using LangChain Agents) that attempts to fulfill the outline using Search and RAG tools.
+The agent pipeline has undergone a major refactoring to implement a **Deep Research Loop** architecture. This replaces the previous iterative LangChain Agent-based reasoner with a more explicit, multi-node graph structure.
 
 The current focus is on:
-- **Verification:** Testing this new Clarify->Reason(Agent)->Synthesize flow. Ensuring the reasoner agent correctly uses tools and iterates based on the outline.
-- **Refinement:** Tuning the reasoner agent's prompt, iteration limits (`config.yaml`), and tool usage logic. Addressing potential issues like source tracking loss.
-- **Testing:** Updating `pytest` tests to reflect the new architecture.
+- **Verification:** Testing this new Clarify -> [Reason -> Search/Fetch/Embed/Retrieve/Summarize]* -> Consolidate -> Synthesize flow. Ensuring the reasoner node makes sensible decisions and the loop progresses correctly.
+- **Refinement:** Tuning prompts (Reasoner decision, Summarizer, Synthesizer), component settings (chunk size, retriever K, consolidator top_n), and iteration limits (`config.yaml`).
+- **Citation Handling:** Verifying the accuracy and formatting of the citation post-processing in the synthesizer.
+- **Testing:** Updating `pytest` tests to reflect the new graph structure and node interactions.
 
-## Recent Changes (since last Memory Bank update - Post LangGraph Refactor)
+## Recent Changes (Deep Research Loop Implementation)
 
-- **Refactored Reasoner to Iterative Agent:**
-    - Removed `agent/planner.py` and the `plan_node` from the LangGraph definition in `agent/__init__.py`.
-    - Modified `agent/state.py` to replace `planned_steps` with `plan_outline: str`.
-    - Modified `agent/clarifier.py`:
-        - Updated LangChain prompts/chains to generate a Markdown outline alongside the refined question.
-        - `clarify_node` now populates both `clarified_question` and `plan_outline` in the state.
-    - Refactored `agent/reasoner.py`:
-        - Implemented `reason_node` which now sets up and runs a LangChain agent (e.g., `create_openai_tools_agent` with `AgentExecutor`).
-        - Defined `web_search` (using `agent.search.serper_search`) and `local_document_search` (using `agent.rag_utils.rag_query.query_vector_store`) as tools using the `@tool` decorator.
-        - The agent receives the `clarified_question`, `plan_outline`, tool descriptions, and `max_iterations` via its prompt.
-        - The agent iteratively calls the tools based on its internal reasoning to gather context relevant to the question and outline.
-        - The final output of the agent execution becomes the `combined_context`.
-    - Added `reasoner` configuration section to `config.yaml` (model, temperature, max_iterations) and updated `agent/config.py` to load it.
-    - Updated `agent/__init__.py` graph definition to connect `clarify_node` -> `reason_node` -> `synthesize_node`.
-- **Fixed Reasoner Prompt Input:** Corrected an issue in `agent/reasoner.py` where the `AgentExecutor` was not invoked with all the variables required by its prompt template.
+- **New Graph Structure:** Defined in `agent/__init__.py`, orchestrating a loop involving fetching, chunking, embedding, retrieving, and summarizing web content.
+- **Reasoner Refactor:** `agent/nodes/reasoner.py` (`reason_node`) no longer runs a self-contained agent. It now uses an LLM call to analyze state (question, outline, notes, iteration) and decide the `next_action` (SEARCH, FETCH, RETRIEVE_CHUNKS, CONSOLIDATE, STOP), directing the graph flow.
+- **New Nodes Added (`agent/nodes/`):**
+    - `search.py`: Executes web search based on reasoner query.
+    - `fetch.py`: Fetches URL content using the new `fetch_url` tool.
+    - `chunk_embed.py`: Chunks/embeds fetched HTML into a session vector store (in-memory Chroma).
+    - `retrieve.py`: Retrieves relevant chunks from the session store based on reasoner query.
+    - `summarize.py`: Summarizes retrieved chunks into notes with detailed embedded citations.
+    - `consolidate.py`: Re-ranks notes using a cross-encoder and prepares context for synthesis.
+- **New Tool Added (`agent/tools/`):**
+    - `fetch.py`: `fetch_url` tool using `requests-html` to get page content.
+- **State Update (`agent/state.py`):** Added fields for `session_vector_store`, `notes`, `fetched_docs`, `retrieved_chunks`, `current_iteration`, `next_action`, `current_query`, `url_to_fetch`.
+- **Synthesizer Update (`agent/nodes/synthesizer.py`):** Modified prompts to preserve detailed citations; added post-processing step to create a numbered reference list.
+- **Configuration Update (`agent/config.py`):** Added default configs and getters for `embedding`, `summarizer`, `retriever`, `consolidator`. Updated `reasoner` and `synthesizer` defaults/prompts.
+- **Dependencies Update (`requirements.txt`):** Added `requests-html`, `lxml[html_clean]`, `sentence-transformers`.
+- **File Organization:** Moved `clarifier.py`, `reasoner.py`, `synthesizer.py` into `agent/nodes/`. Removed old `search_node` from `agent/search.py`.
 
-*(Previous changes like LangGraph adoption, RAG enhancements, Clarifier implementation, etc., are documented in prior versions/below)*
+*(Previous changes like initial LangGraph adoption, RAG implementation, Clarifier implementation, etc., are documented below)*
 
 --- (Previous Change Log Snippets for Context) ---
 
+- **Refactored Reasoner to Iterative Agent:** ... (details omitted for brevity - superseded by Deep Research Loop) ...
 - **Refactored Agent Pipeline to LangGraph:** ... (details omitted for brevity) ...
 - **Centralized Shared Utilities:** ... (details omitted for brevity) ...
-- **Fixed Clarifier Bug:** ... (details omitted for brevity) ...
-- **Enhanced RAG Retrieval with Link Traversal & Web Fetching:** ... (details omitted for brevity) ...
-- **Implemented Interactive LangChain Clarifier:** ... (details omitted for brevity) ...
 - *(... and so on for other previous changes ...)*
 
 ## Next Steps
 
 1.  **Install/Update Dependencies:**
-    *   Run `python3 -m pip install -r requirements.txt` (ensure `langchain-agents` or equivalent is included if not already covered by `langchain`).
+    *   Run `python3 -m pip install -r requirements.txt` (ensure `requests-html`, `lxml[html_clean]`, `sentence-transformers` are installed).
 2.  **Configure Environment & Config:**
-    *   Ensure `.env` has valid `SERPER_API_KEY` (for search tool) and `OPENAI_API_KEY` (required for Clarifier, Reasoner Agent LLM, RAG tool, Synthesizer).
-    *   Ensure `RAG_DOC_PATH` in `.env` points to a directory with documents if RAG tool usage is desired.
-    *   Review/modify `config.yaml`, especially the new `reasoner` section (`model`, `temperature`, `max_iterations`).
-3.  **Manual Testing (Focus on New Reasoner Agent Flow):**
-    *   Run with default/verbose mode: `python3 main.py "Your question here"`
-    *   **Test Clarifier:** Verify it still refines questions and now *also* outputs a reasonable Markdown `plan_outline` (visible in verbose logs).
-    *   **Test Reasoner Agent:**
-        *   Use `-v` to observe the `AgentExecutor` logs. Check if it's calling the `web_search` and `local_document_search` tools appropriately based on the question/outline.
-        *   Verify it stops after `max_iterations` or (ideally) when it deems the outline fulfilled.
-        *   Examine the `combined_context` passed to the synthesizer (in verbose logs) - does it reflect the information gathered by the tools?
-        *   Test with and without RAG enabled (`RAG_DOC_PATH` set/unset).
-    *   **Test Synthesizer:** Does the final answer make sense based on the context provided by the reasoner?
+    *   Ensure `.env` has valid `SERPER_API_KEY` and `OPENAI_API_KEY`.
+    *   Review/modify `config.yaml`, especially the sections for `reasoner`, `embedding`, `summarizer`, `retriever`, `consolidator`, `synthesizer`. Pay attention to model choices, prompts, and thresholds (e.g., `max_iterations`, `top_n`).
+3.  **Manual Testing (Focus on New Deep Research Loop):**
+    *   Run with verbose mode: `python3 main.py "Your question here" --verbose`
+    *   **Test Clarifier:** Verify outline generation.
+    *   **Test Research Loop:**
+        *   Observe `reason_node` decisions (`next_action`).
+        *   Check if `search_node` runs with the correct query.
+        *   Check if `fetch_node` gets the right URL.
+        *   Check if `chunk_and_embed_node` processes content and adds to the (transient) store.
+        *   Check if `retrieve_relevant_chunks_node` gets chunks based on reasoner query.
+        *   Check if `summarize_chunks_node` creates notes with correct citation format.
+        *   Verify loop continues up to `max_iterations` or until `CONSOLIDATE`/`STOP` is decided.
+    *   **Test Consolidation:** Examine `combined_context` passed to synthesizer (in verbose logs) - does it contain ranked notes?
+    *   **Test Synthesizer:** Does the final answer make sense? Are citations correctly formatted with a reference list?
 4.  **Run/Update Automated Tests:**
-    *   Execute `python3 -m pytest`. Tests will need significant updates to mock the new reasoner agent's behavior or test its components in isolation.
-5.  **Address Issues:** Fix bugs identified during testing (e.g., reasoner prompt tuning, tool query generation, source tracking).
-6.  **Consider Enhancements:** Improve reasoner's stopping criteria, re-implement source tracking, add more tools.
+    *   Execute `python3 -m pytest`. Tests will need significant updates to mock the new graph structure and node interactions.
+5.  **Address Issues:** Fix bugs identified during testing (e.g., prompt tuning, node logic errors, citation formatting).
+6.  **Consider Enhancements:** Improve HTML cleaning (`trafilatura`), add RAG integration, refine reasoner decision logic.
 
 ## Active Decisions & Considerations
 
-- **Agent Architecture:** Shifted from a fixed pipeline (`plan->search/rag->reason`) to a more dynamic one (`clarify+outline -> reason(agent+tools) -> synthesize`).
-- **Reasoner:** Now an iterative LangChain agent responsible for tool selection (Search/RAG) and execution based on the clarified question and a generated outline. Configurable via `config.yaml`.
-- **Planner:** Removed. Outline generation is now part of the Clarifier.
-- **State:** `AgentState` now includes `plan_outline` instead of `planned_steps`.
-- **Configuration:** `config.yaml` includes a `reasoner` section for model, temperature, and `max_iterations`.
-- **Source Tracking:** Direct tracking of source URLs/paths from Search/RAG results is currently lost because the `AgentExecutor` abstracts the tool calls. Re-implementing this would require parsing the agent's intermediate steps.
-- **Testing:** Automated tests require significant updates for the new architecture.
+- **Agent Architecture:** Shifted to an explicit, multi-node "Deep Research Loop" graph controlled by a central `reason_node`.
+- **Reasoner:** Now a decision-making node, not a self-contained agent executor. Uses LLM to choose next step (SEARCH, FETCH, RETRIEVE_CHUNKS, CONSOLIDATE, STOP).
+- **Content Handling:** Agent now fetches full HTML, chunks/embeds into a session store, retrieves, and summarizes before final synthesis.
+- **Vector Store:** Uses an ephemeral, in-memory Chroma store (`session_vector_store`) for each run, managed via `chunk_and_embed_node`. Persistent RAG store (`agent/rag.py`, `agent/rag_utils/`) is currently unused by the main loop.
+- **Summarization:** Happens per retrieval step, generating source-grounded notes using a smaller LLM.
+- **Consolidation:** Notes are re-ranked using a cross-encoder before final synthesis.
+- **Source Tracking:** Implemented via detailed embedded citations in notes and post-processing in the synthesizer to create a reference list.
+- **Configuration:** Added sections and getters in `config.yaml`/`agent/config.py` for new components.
+- **File Structure:** Core nodes (`clarifier`, `reasoner`, `synthesizer`) moved to `agent/nodes/`. New nodes and tools placed in `agent/nodes/` and `agent/tools/`.
+- **Testing:** Automated tests require significant updates.

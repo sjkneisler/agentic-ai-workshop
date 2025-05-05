@@ -96,34 +96,4 @@ def serper_search(query: str, n: Optional[int] = None, verbose: bool = False) ->
 
     return results[:num_results] # Ensure we don't return more than requested if API gives more
 
-# --- LangGraph Node ---
-
-def search_node(state: AgentState) -> Dict[str, Any]:
-    """LangGraph node to perform web search."""
-    is_verbose = state['verbosity_level'] == 2
-    if state.get("error"): # Skip if prior node failed
-         if is_verbose: print_verbose("Skipping search due to previous error.", style="yellow")
-         return {}
-
-    if is_verbose: print_verbose("Entering Search Node", style="cyan")
-
-    try:
-        # Call the main logic function from this module
-        # Pass None for 'n' so it uses the config value by default
-        results = serper_search(state['clarified_question'], n=None, verbose=is_verbose)
-        urls = [result.get("link", "N/A") for result in results if result.get("link")]
-        # Verbose printing is handled within serper_search
-        # Update the state
-        return {"search_results": results, "web_source_urls": urls, "error": None}
-    except RuntimeError as e: # Catch the specific error raised for missing API key
-        error_msg = f"Search step failed: {e}"
-        if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
-        return {"error": error_msg}
-    except Exception as e:
-        error_msg = f"Search step failed with unexpected error: {e}"
-        if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
-        # Update state with error
-        return {"error": error_msg}
-
-# Optional: Add search_node to __all__
-# __all__ = ['serper_search', 'search_node']
+# (Old search_node removed, logic moved to agent/nodes/search.py)

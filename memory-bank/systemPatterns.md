@@ -1,124 +1,72 @@
-Below is a **two-tier implementation roadmap** reflecting the refactored agent architecture:
+Below is a **two-tier implementation roadmap** reflecting the current agent architecture (Deep Research Loop):
 
 *Tier 1* = discrete “work chunks” the coding agent can tackle sequentially.
 *Tier 2* = fine-grained steps inside each chunk.
 
 ---
 
-## 📊 Tier 1 — Work Chunks (macro tasks) - REVISED
+## 📊 Tier 1 — Work Chunks (macro tasks) - REVISED for Deep Research Loop
 
-| Chunk # | Deliverable                     | Purpose                                                                                                | Status |
-| ------- | ------------------------------- | ------------------------------------------------------------------------------------------------------ | ------ |
-| **0**   | *Repo Bootstrap*                | Git repo initialized with layout skeleton, config, and minimal tooling.                                | ✅     |
-| **1**   | *Core Runtime Skeleton*         | `main.py` CLI shell + `agent/` package with module stubs & initial `utils.py`, `state.py`.             | ✅     |
-| **2**   | *Serper Search Functionality*   | Working `search.py` (`serper_search`) that calls Serper, env-driven. (Node removed)                    | ✅     |
-| **3**   | *RAG Functionality (Langchain)* | `rag_utils` (`initializer`, `query`) using Langchain. `rag.py` interface. (Node removed)               | ✅     |
-| **4**   | *Synthesis Module*              | Implement `synthesizer.py` (`synthesize_node`).                                                        | ✅     |
-| **5**   | *Clarifier Module*              | Implement `clarifier.py` (`clarify_node`) including outline generation.                                | ✅     |
-| **6**   | *Reasoner Agent Module*         | Implement `reasoner.py` (`reason_node`) with iterative tool-using agent (Search/RAG).                  | ✅     |
-| **7**   | *LangGraph Wiring*              | Define & compile `StateGraph` in `agent/__init__.py`, connecting `clarify`->`reason`->`synthesize`. | ✅     |
-| **8**   | *Local Tests*                   | `pytest` with mocks (needs significant update for new flow & reasoner).                                | ⏳     |
-| **9**   | *README & Docs*                 | Populate README reflecting new architecture.                                                           | ⏳     |
-| **10**  | *Polish Pass*                   | Verify `.env.example`, `config.yaml`, print-styles, error messages, requirements.                      | ⏳     |
+| Chunk # | Deliverable                                  | Purpose                                                                                                                               | Status |
+| ------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **0**   | *Repo Bootstrap*                             | Git repo initialized with layout skeleton, config, and minimal tooling.                                                               | ✅     |
+| **1**   | *Core Runtime Skeleton*                      | `main.py` CLI shell + `agent/` package with initial `utils.py`, `state.py`.                                                           | ✅     |
+| **2**   | *Serper Search Utility*                      | Working `search.py` (`serper_search`) utility function.                                                                               | ✅     |
+| **3**   | *RAG Functionality (Langchain)*              | `rag_utils` (`initializer`, `query`) using Langchain. `rag.py` interface. (Kept but unused by main loop).                              | ✅     |
+| **4**   | *Initial Synthesis Module*                   | Implement initial `synthesizer.py` (`synthesize_node`).                                                                               | ✅     |
+| **5**   | *Initial Clarifier Module*                   | Implement initial `clarifier.py` (`clarify_node`) including outline generation.                                                       | ✅     |
+| **6**   | *Initial Reasoner Agent Module*              | Implement initial `reasoner.py` (`reason_node`) with iterative tool-using agent (Search/RAG). (Superseded by Deep Loop).               | ✅     |
+| **7**   | *Initial LangGraph Wiring*                   | Define & compile `StateGraph` in `agent/__init__.py`, connecting `clarify`->`reason(agent)`->`synthesize`. (Superseded by Deep Loop). | ✅     |
+| **8**   | **Deep Research Loop Implementation**        | Refactor graph for Fetch->Chunk/Embed->Retrieve->Summarize loop, new nodes, refactored reasoner, citation handling.                    | ✅     |
+| **9**   | *Local Tests*                                | `pytest` with mocks (needs significant update for new flow).                                                                          | ⏳     |
+| **10**  | *README & Docs*                              | Populate README reflecting new architecture. Update Memory Bank (this process).                                                       | ⏳     |
+| **11**  | *Polish Pass*                                | Verify `.env.example`, `config.yaml`, print-styles, error messages, requirements pinning.                                             | ⏳     |
 
 ---
 
-## 🔍 Tier 2 — Detailed Steps per Chunk - REVISED
+## 🔍 Tier 2 — Detailed Steps per Chunk - REVISED for Deep Research Loop
 
-### **Chunk 0 – Repo Bootstrap** (✅)
+*(Chunks 0-7 represent the previous state before the Deep Research Loop refactor and are omitted here for brevity, assuming they were completed as documented previously)*
 
-1.  `git init`.
-2.  Create top-level tree.
-3.  Add `.env.example`.
-4.  Create empty `requirements.txt`.
-5.  Commit: “Bootstrap repo structure.”
+### **Chunk 8 – Deep Research Loop Implementation** (✅)
 
-### **Chunk 1 – Core Runtime Skeleton** (✅)
+1.  **Dependencies:** Add `requests-html`, `lxml[html_clean]`, `sentence-transformers` to `requirements.txt`. Install.
+2.  **Fetch Tool:** Create `agent/tools/fetch.py` with `fetch_url` tool using `requests-html`.
+3.  **State Update:** Add `session_vector_store`, `notes`, `fetched_docs`, `retrieved_chunks`, `current_iteration`, `next_action`, etc., to `agent/state.py`.
+4.  **New Nodes:** Create node files in `agent/nodes/`:
+    *   `chunk_embed.py`: `chunk_and_embed_node` (uses Chroma in-memory, OpenAI embeddings).
+    *   `retrieve.py`: `retrieve_relevant_chunks_node` (queries session store).
+    *   `summarize.py`: `summarize_chunks_node` (uses small LLM, embeds detailed citations).
+    *   `consolidate.py`: `consolidate_notes_node` (uses cross-encoder for re-ranking).
+    *   `search.py`: `search_node` (calls `serper_search` utility).
+    *   `fetch.py`: `fetch_node` (calls `fetch_url` tool).
+5.  **Reasoner Refactor:** Rewrite `agent/reasoner.py` (`reason_node`) to be the decision-making LLM call, outputting `next_action` and arguments.
+6.  **Synthesizer Update:** Modify `agent/synthesizer.py` (`synthesize_node`) prompt to preserve detailed citations; add post-processing regex logic for reference list generation.
+7.  **Config Update:** Add default sections and getters for `embedding`, `summarizer`, `retriever`, `consolidator` to `agent/config.py`. Update `reasoner` and `synthesizer` prompts/defaults. Ensure `config.yaml` can override these.
+8.  **File Organization:** Move `clarifier.py`, `reasoner.py`, `synthesizer.py` to `agent/nodes/`. Remove old `search_node` from `agent/search.py`.
+9.  **Graph Wiring:** Rewrite `agent/__init__.py` to import all nodes, define `route_after_reasoning` conditional logic, and connect the full graph flow (Clarify -> Reason -> [Search | Fetch -> Embed | Retrieve -> Summarize] -> Consolidate -> Synthesize -> END). Update initial state in `run_agent`.
+10. **Commit:** "Implement deep research loop architecture."
 
-1.  Create `agent/utils.py` (logging).
-2.  Create `agent/state.py` (`AgentState`).
-3.  `agent/__init__.py` → `run_agent()` stub.
-4.  Add module stubs (`clarifier.py`, `reasoner.py`, `synthesizer.py`, `search.py`, `rag.py`, `rag_utils/*`).
-5.  `main.py` CLI shell.
-6.  Update `requirements.txt` (essentials: `python-dotenv`, `rich`, `pytest`, `PyYAML`, `langgraph`, `langchain-core`).
-7.  Commit: “Core skeleton with LangGraph setup, state, utils.”
-
-### **Chunk 2 – Serper Search Functionality** (✅)
-
-1.  Add `requests`, `certifi` to requirements.
-2.  Implement `serper_search(query, n=None, verbose=False)` in `search.py`.
-3.  Handle `SERPER_API_KEY`.
-4.  Commit: “Working Serper search function.”
-
-### **Chunk 3 – RAG Functionality (Langchain Implementation)** (✅)
-
-1.  Add `langchain`, `langchain-community`, `langchain-openai`, `langchain-chroma`, `unstructured`, `beautifulsoup4` to requirements.
-2.  Implement `agent/rag_utils/rag_initializer.py` (`initialize_rag`, indexing logic).
-3.  Implement `agent/rag_utils/rag_query.py` (`query_vector_store`, retrieval logic).
-4.  Implement `agent/rag_utils/ingestion.py` (link helpers).
-5.  Update `agent/rag.py` interface.
-6.  Commit: “Implement RAG logic using Langchain in rag_utils.”
-
-### **Chunk 4 – Synthesis Module** (✅)
-
-1.  Implement `synthesize_answer()` in `synthesizer.py` using `utils.initialize_llm`.
-2.  Implement `synthesize_node()` wrapper.
-3.  Commit: “Implement synthesis module with LangGraph node.”
-
-### **Chunk 5 – Clarifier Module** (✅)
-
-1.  Implement `clarify_question()` in `clarifier.py` using LangChain for check, user interaction, and refinement + outline generation.
-2.  Add `langchain-openai`, `pydantic` (v1) to requirements.
-3.  Implement `clarify_node()` wrapper.
-4.  Commit: “Implement clarifier module with outline generation and LangGraph node.”
-
-### **Chunk 6 – Reasoner Agent Module** (✅)
-
-1.  Add `langchain-agents` (or ensure core includes necessary agent parts) to requirements.
-2.  In `reasoner.py`:
-    *   Define `@tool` wrappers for `serper_search` and `query_vector_store`.
-    *   Implement `reason_node()`:
-        *   Initialize agent LLM (`utils.initialize_llm`).
-        *   Define tools list (conditionally include RAG tool).
-        *   Define `ChatPromptTemplate` for the tool-using agent (including question, outline, tool info, instructions).
-        *   Create agent (e.g., `create_openai_tools_agent`).
-        *   Create `AgentExecutor`, passing agent, tools, verbosity, and `max_iterations` from config.
-        *   Invoke `agent_executor` with correctly formatted input dictionary.
-        *   Return final context in state.
-3.  Add `reasoner` section to `config.yaml` defaults and `agent/config.py`.
-4.  Commit: “Implement iterative Reasoner agent with Search/RAG tools.”
-
-### **Chunk 7 – LangGraph Wiring** (✅)
-
-1.  In `agent/__init__.py`:
-    *   Remove imports for `plan_node`, `search_node`, `rag_node`.
-    *   Remove corresponding `add_node` calls.
-    *   Update graph edges: `clarify_node` -> `reason_node` -> `synthesize_node`.
-    *   Remove old conditional edge logic.
-2.  Update `agent.run_agent()` initial state (`plan_outline`).
-3.  Delete `agent/planner.py`.
-4.  Commit: “Wire LangGraph for new Clarify->Reason->Synthesize flow.”
-
-### **Chunk 8 – Local Tests** (⏳)
+### **Chunk 9 – Local Tests** (⏳)
 
 1.  Update `test_agent.py`:
-    *   Mock `clarify_node`, `reason_node`, `synthesize_node` or test graph invocation.
-    *   Focus tests on individual tool functions (`serper_search`, `query_vector_store`) if possible.
-    *   Testing the full `reason_node` agent loop might require more complex mocking.
-2.  Commit: “Update pytest coverage for new architecture (initial).”
+    *   Mock new nodes (`fetch_node`, `chunk_embed_node`, etc.).
+    *   Test graph invocation with different paths based on mocked reasoner decisions.
+    *   Test citation post-processing logic in isolation.
+2.  Commit: “Update pytest coverage for deep research loop.”
 
-### **Chunk 9 – README & Docs** (⏳)
+### **Chunk 10 – README & Docs** (⏳)
 
-1.  Update README sections (How it Works, Config, etc.).
+1.  Update README sections (How it Works, Config, etc.) for the deep research loop.
 2.  Update Memory Bank files (this process).
-3.  Commit: “Update documentation for Reasoner Agent refactor.”
+3.  Commit: “Update documentation for deep research loop.”
 
-### **Chunk 10 – Polish Pass** (⏳)
+### **Chunk 11 – Polish Pass** (⏳)
 
 1.  Pin package versions in `requirements.txt`.
-2.  Validate `.env.example` and `config.yaml`.
-3.  Review print styles and error messages.
-4.  Address TODOs (e.g., source tracking in reasoner).
+2.  Validate `.env.example` and `config.yaml` defaults and structure.
+3.  Review print styles (`print_verbose`) and error messages across all nodes.
+4.  Address any remaining TODOs.
 5.  Commit: “Final polish and documentation update.”
 
 ---
