@@ -25,6 +25,11 @@ DEFAULT_CONFIG = {
         'rag_follow_internal_chunk_links': True, # Follow internal links between CHUNKS at QUERY time?
         'rag_internal_link_depth': 1,       # Max depth for internal chunk link traversal at QUERY time
         'rag_internal_link_k': 2            # How many related chunks to retrieve per internal link at QUERY time
+    },
+    'reasoner': { # Added defaults for reasoner
+        'model': 'gpt-4o-mini',
+        'temperature': 0.3,
+        'max_iterations': 5
     }
     # Add defaults for other sections like 'clarifier' if needed
 }
@@ -69,6 +74,9 @@ def get_search_config() -> Dict[str, Any]:
 
 def get_rag_config() -> Dict[str, Any]:
     return CONFIG.get('rag', DEFAULT_CONFIG['rag'])
+
+def get_reasoner_config() -> Dict[str, Any]: # Added getter for reasoner
+    return CONFIG.get('reasoner', DEFAULT_CONFIG['reasoner'])
 
 # Add getters for other sections as needed
 # def get_clarifier_config()...

@@ -1,7 +1,7 @@
 import os
 import warnings
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple # Added Tuple
 
 # LangChain components
 try:
@@ -25,12 +25,18 @@ class ClarificationCheckOutput(BaseModel):
     needs_clarification: bool = Field(description="True if the question needs clarification, False otherwise.")
     questions_to_ask: List[str] = Field(description="List of specific questions to ask the user if clarification is needed.")
 
+class RefinementOutput(BaseModel):
+    """Structure for the refinement LLM response."""
+    refined_question: str = Field(description="The single, clear, and focused question suitable for a research agent.")
+    plan_outline: str = Field(description="A simple Markdown outline with a title and 3-5 relevant section headers based on the refined question.")
+
+
 # --- LangChain Setup ---
 
 def _initialize_langchain_components():
     """Initializes LangChain components using shared utility."""
     if not LANGCHAIN_AVAILABLE:
-        return None, None, None, False
+        return None, None, None, None, False # Added one None
 
     # Use the shared initializer function
     clarification_llm = initialize_llm(
@@ -49,7 +55,7 @@ def _initialize_langchain_components():
     # Check if LLMs initialized successfully
     if not clarification_llm or not refinement_llm:
         warnings.warn("Failed to initialize one or both LLMs for clarification.")
-        return None, None, None, False
+        return None, None, None, None, False # Added one None
 
     try:
         # --- Clarification Check Chain ---
@@ -69,10 +75,16 @@ Respond ONLY with a JSON object matching the following schema:
         clarification_check_chain = clarification_check_prompt | clarification_llm | json_parser
 
         # --- Refinement Chain ---
-        refinement_system_prompt = """You are an assistant that refines a user's research question based on a clarifying conversation.
-Given the original question and the subsequent Q&A, synthesize a single, clear, and focused question suitable for a research agent.
-Output ONLY the refined question."""
+        refinement_system_prompt = """You are an assistant that refines a user's research question based on a clarifying conversation AND generates a basic Markdown research plan outline.
+Given the original question and the subsequent Q&A, synthesize:
+1. A single, clear, and focused question suitable for a research agent.
+2. A simple Markdown outline containing a title (derived from the refined question) and 3-5 relevant section headers to guide the research.
+
+Respond ONLY with a JSON object matching the following schema:
+{refinement_json_schema}"""
         refinement_human_template = "{conversation_history}"
+
+        refinement_json_parser = JsonOutputParser(pydantic_object=RefinementOutput)
 
         refinement_prompt = ChatPromptTemplate.from_messages([
             ("system", refinement_system_prompt),
@@ -80,29 +92,35 @@ Output ONLY the refined question."""
         ])
 
         # Use the initialized LLM instance
-        refinement_chain = refinement_prompt | refinement_llm | StrOutputParser()
+        refinement_chain = refinement_prompt | refinement_llm | refinement_json_parser
 
-        return clarification_check_chain, refinement_chain, json_parser, True
+        return clarification_check_chain, refinement_chain, json_parser, refinement_json_parser, True # Added refinement_json_parser
 
     except Exception as e:
         # Catch errors during chain setup specifically
         warnings.warn(f"Failed to set up LangChain chains for clarification: {e}")
-        return None, None, None, False
+        return None, None, None, None, False # Added one None
 
 # --- Main Clarifier Function ---
 
-def clarify_question(question: str, verbose: bool = False) -> str:
+def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
     """
-    Clarifies the user's question using LangChain if needed.
+    Clarifies the user's question using LangChain if needed and generates a plan outline.
+
+    Returns:
+        A tuple containing:
+            - refined_question (str): The clarified question (or original if no clarification).
+            - plan_outline (str): The generated Markdown outline (or a default if generation fails).
     """
+    default_outline = f"# Research Plan: {question}\n\n## Overview\n\n## Key Aspects\n\n## Conclusion"
     if verbose:
         print_verbose(f"Original question: [cyan]'{question}'[/cyan]", title="Clarifying Question", style="magenta")
 
-    clarification_check_chain, refinement_chain, json_parser, lc_initialized = _initialize_langchain_components()
+    clarification_check_chain, refinement_chain, json_parser, refinement_json_parser, lc_initialized = _initialize_langchain_components()
 
-    if not lc_initialized or not json_parser:
-        if verbose: print_verbose("LLM clarification skipped (LangChain components failed to initialize, OpenAI key missing, or parser unavailable).", style="yellow")
-        return question
+    if not lc_initialized or not json_parser or not refinement_json_parser:
+        if verbose: print_verbose("LLM clarification/planning skipped (LangChain components failed to initialize, OpenAI key missing, or parsers unavailable).", style="yellow")
+        return question, default_outline
 
     # --- LangChain Call 1: Check if clarification is needed ---
     if verbose: print_verbose("Asking LLM (via LangChain) if clarification is needed...", style="dim blue")
@@ -125,9 +143,28 @@ def clarify_question(question: str, verbose: bool = False) -> str:
         needs_clarification = False
         questions_to_ask = []
 
+    # If no clarification needed, still try to generate an outline from the original question
     if not needs_clarification or not questions_to_ask:
-        if verbose: print_verbose("LLM determined no clarification needed or failed to provide questions.", style="green")
-        return question
+        if verbose: print_verbose("LLM determined no clarification needed or failed to provide questions. Attempting outline generation.", style="green")
+        # Use the refinement chain directly with the original question
+        conversation_history_str = f"Original Question: {question}\n(No clarification Q&A needed)"
+        try:
+            refinement_schema_instructions = refinement_json_parser.get_format_instructions()
+            refinement_result: Dict = refinement_chain.invoke({
+                "conversation_history": conversation_history_str,
+                "refinement_json_schema": refinement_schema_instructions
+            })
+            refined_question = refinement_result.get('refined_question', question)
+            plan_outline = refinement_result.get('plan_outline', default_outline)
+            if verbose:
+                 print_verbose(f"Generated outline for original question.", title="Outline Generation", style="green")
+                 print_verbose(f"Refined Question (if changed): [cyan]'{refined_question}'[/cyan]", style="dim")
+                 print_verbose(f"Plan Outline:\n{plan_outline}", style="dim")
+            return refined_question, plan_outline
+        except Exception as e:
+            warnings.warn(f"LangChain refinement/outline chain failed even without Q&A: {e}")
+            if verbose: print_verbose("Outline generation failed. Using original question and default outline.", style="red")
+            return question, default_outline
 
     # --- User Interaction ---
     if verbose: print_verbose(f"LLM suggests asking {len(questions_to_ask)} question(s) for clarification.", style="yellow")
@@ -148,29 +185,38 @@ def clarify_question(question: str, verbose: bool = False) -> str:
             conversation_lines.append(f"Answer {i+1}: {user_answer}")
 
     except (KeyboardInterrupt, EOFError):
-         if verbose: print_verbose("\nUser cancelled clarification. Using original question.", style="bold red")
-         return question
+         if verbose: print_verbose("\nUser cancelled clarification. Using original question and default outline.", style="bold red")
+         return question, default_outline
 
     # --- LangChain Call 2: Refine the question ---
     conversation_history_str = "\n".join(conversation_lines)
 
-    if verbose: print_verbose("Asking LLM (via LangChain) to refine the question based on conversation...", style="dim blue")
+    if verbose: print_verbose("Asking LLM (via LangChain) to refine question and generate outline based on conversation...", style="dim blue")
 
     try:
-        refined_question = refinement_chain.invoke({"conversation_history": conversation_history_str})
-    except Exception as e:
-        warnings.warn(f"LangChain refinement chain failed: {e}")
-        refined_question = ""
+        refinement_schema_instructions = refinement_json_parser.get_format_instructions()
+        refinement_result: Dict = refinement_chain.invoke({
+            "conversation_history": conversation_history_str,
+            "refinement_json_schema": refinement_schema_instructions
+        })
+        refined_question = refinement_result.get('refined_question')
+        plan_outline = refinement_result.get('plan_outline')
 
-    if not refined_question:
-        warnings.warn("LLM failed to provide a refined question. Using original question.")
-        if verbose: print_verbose("LLM refinement failed. Using original question.", style="red")
-        return question
+    except Exception as e:
+        warnings.warn(f"LangChain refinement/outline chain failed: {e}")
+        refined_question = None
+        plan_outline = None
+
+    if not refined_question or not plan_outline:
+        warnings.warn("LLM failed to provide a refined question or plan outline. Using original question and default outline.")
+        if verbose: print_verbose("LLM refinement/planning failed. Using original question and default outline.", style="red")
+        return question, default_outline
 
     if verbose:
-        print_verbose(f"Refined question: [cyan]'{refined_question}'[/cyan]", title="Clarification Complete", style="green")
+        print_verbose(f"Refined question: [cyan]'{refined_question}'[/cyan]", title="Clarification & Planning Complete", style="green")
+        print_verbose(f"Plan Outline:\n{plan_outline}", style="dim")
 
-    return refined_question
+    return refined_question, plan_outline
 
 # Example usage (for testing purposes, not run by default)
 if __name__ == '__main__':
@@ -209,11 +255,11 @@ def clarify_node(state: AgentState) -> Dict[str, Any]:
     if is_verbose: print_verbose("Entering Clarification Node", style="magenta")
 
     try:
-        clarified = clarify_question(state['original_question'], verbose=is_verbose)
-        if is_verbose: print_verbose(f"Clarification resulted in: [cyan]'{clarified}'[/cyan]", style="green")
-        return {"clarified_question": clarified, "error": None}
+        clarified_q, plan_out = clarify_question(state['original_question'], verbose=is_verbose)
+        # Verbose printing happens inside clarify_question now
+        return {"clarified_question": clarified_q, "plan_outline": plan_out, "error": None}
     except Exception as e:
-        error_msg = f"Clarification step failed: {e}"
+        error_msg = f"Clarification/Planning step failed: {e}"
         if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
         return {"error": error_msg}
 

@@ -18,9 +18,7 @@ from .state import AgentState
 
 # --- Node Function Imports ---
 from .clarifier import clarify_node
-from .planner import plan_node
-from .search import search_node
-from .rag_utils.rag_query import rag_node # Import from the correct location
+# Removed planner, search, rag node imports
 from .reasoner import reason_node
 from .synthesizer import synthesize_node
 
@@ -30,30 +28,7 @@ from .utils import print_verbose, RICH_AVAILABLE, console # Import shared loggin
 # --- Define Conditional Edges & Error Handler ---
 # These functions define the graph's flow logic and remain here.
 
-def should_execute_step(state: AgentState) -> str:
-    """Determines the next step after planning."""
-    if state.get("error"): return "error_handler"
-    planned_steps = state.get('planned_steps', [])
-    if "search" in planned_steps:
-        return "search_node"
-    elif "rag" in planned_steps:
-        return "rag_node"
-    else:
-        return "reason_node"
-
-def after_search_decision(state: AgentState) -> str:
-    """Routes after the search node completes."""
-    if state.get("error"): return "error_handler"
-    if "rag" in state.get('planned_steps', []):
-        return "rag_node"
-    else:
-        return "reason_node"
-
-def after_rag_decision(state: AgentState) -> str:
-    """Routes after the RAG node completes."""
-    if state.get("error"): return "error_handler"
-    else:
-        return "reason_node"
+# Removed conditional edge functions: should_execute_step, after_search_decision, after_rag_decision
 
 def error_handler_node(state: AgentState) -> Dict[str, Any]:
     """Handles errors encountered in the graph. Defined here as it's graph-specific."""
@@ -76,47 +51,25 @@ workflow = StateGraph(AgentState)
 
 # Add nodes using imported functions
 workflow.add_node("clarify_node", clarify_node)
-workflow.add_node("plan_node", plan_node)
-workflow.add_node("search_node", search_node)
-workflow.add_node("rag_node", rag_node) # Use imported rag_node
+# Removed plan_node, search_node, rag_node
 workflow.add_node("reason_node", reason_node)
 workflow.add_node("synthesize_node", synthesize_node)
 workflow.add_node("error_handler", error_handler_node) # Use local error handler
 
-# Define edges (remains the same)
+# Define edges
 workflow.set_entry_point("clarify_node")
-workflow.add_edge("clarify_node", "plan_node")
 
+# Connect clarify directly to reason
 workflow.add_conditional_edges(
-    "plan_node",
-    should_execute_step,
-    {
-        "search_node": "search_node",
-        "rag_node": "rag_node",
-        "reason_node": "reason_node",
-        "error_handler": "error_handler"
-    }
-)
-
-workflow.add_conditional_edges(
-    "search_node",
-    after_search_decision,
-    {
-        "rag_node": "rag_node",
-        "reason_node": "reason_node",
-        "error_handler": "error_handler"
-    }
-)
-
-workflow.add_conditional_edges(
-    "rag_node",
-    after_rag_decision,
+    "clarify_node",
+    lambda state: "reason_node" if not state.get("error") else "error_handler",
     {
         "reason_node": "reason_node",
         "error_handler": "error_handler"
     }
 )
 
+# Connect reason to synthesize
 workflow.add_conditional_edges(
     "reason_node",
     lambda state: "synthesize_node" if not state.get("error") else "error_handler",
@@ -154,9 +107,9 @@ def run_agent(question: str, verbosity_level: int = 1) -> tuple[str, list[str], 
     initial_state: AgentState = {
         "original_question": question,
         "clarified_question": "",
-        "planned_steps": [],
-        "search_results": [],
-        "rag_context": "",
+        "plan_outline": "", # Changed from planned_steps
+        "search_results": [], # Kept, but might be intermediate now
+        "rag_context": "", # Kept, but might be intermediate now
         "rag_source_paths": [],
         "combined_context": "",
         "final_answer": "Agent pipeline did not complete.",
