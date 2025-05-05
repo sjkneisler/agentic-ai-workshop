@@ -80,7 +80,7 @@ Below is a **two-tier implementation roadmap**:
      * Check `RAG_DOC_PATH`; if absent → log notice, return empty string.
      * If present → load or create Chroma DB in `.rag_store/`.
    * Provide `query_vector_store(query)` returning a single text blob (top match summaries).
-   * If `OPENAI_API_KEY` missing and docs exist → raise friendly error.
+   * If `OPENAI_API_KEY` missing and docs exist → issue warning, disable RAG (prevents embedding/query errors).
 3. Add `embed_corpus(directory)` helper (called automatically on first run).
 4. Commit: “RAG stub with Chroma+OpenAI embeddings (graceful fallback).”
 

@@ -11,7 +11,7 @@ from typing import Dict, Any
 
 DEFAULT_CONFIG = {
     'synthesizer': {
-        'model': 'gpt-3.5-turbo',
+        'model': 'gpt-4o-mini',
         'system_prompt': 'You are a helpful research assistant. Synthesize a concise answer to the user\'s question based *only* on the provided context. Do not add information not present in the context. If the context is insufficient, say so.',
         'max_tokens': 500,
         'temperature': 0.7

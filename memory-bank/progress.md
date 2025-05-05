@@ -119,3 +119,4 @@ Thought for a couple of seconds
 * ✅ Refactored synthesizer and search modules to use `config.yaml`.
 * ✅ Implemented verbosity levels (`--quiet`, default, `--verbose`) in `main.py` and `agent/__init__.py`.
 * ✅ Updated `README.md` and Memory Bank files to reflect recent changes.
+* ✅ Implemented automatic RAG corpus embedding in `agent/rag.py` (processes `.txt`/`.md` files from `RAG_DOC_PATH` on init if DB is empty).

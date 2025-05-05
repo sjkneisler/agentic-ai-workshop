@@ -56,7 +56,7 @@ Beyond the API keys and RAG path in the `.env` file, you can tune the agent's be
 Example (`config.yaml`):
 ```yaml
 synthesizer:
-  model: "gpt-4" # Use GPT-4 instead of 3.5-turbo
+  model: "gpt-4o-mini"
   system_prompt: |
     You are a factual research assistant. Provide a bulleted list summarizing
     the key findings based strictly on the provided context.
@@ -78,7 +78,7 @@ The agent follows a predefined pipeline orchestrated in `agent/__init__.py`:
     *   **Search (`agent/search.py`):** Performs a web search using the Serper API if planned.
     *   **RAG (`agent/rag.py`):** Queries a local ChromaDB vector store if planned and configured. Requires `RAG_DOC_PATH` and `OPENAI_API_KEY`. Embeddings are generated on the fly (basic implementation).
 5.  **Reason (`agent/reasoner.py`):** Combines the context gathered from search and RAG into a single block of text.
-6.  **Synthesize (`agent/synthesizer.py`):** Uses the combined context and the clarified question to generate a final answer. Attempts to use OpenAI (`gpt-3.5-turbo` by default) if the key is available; otherwise, falls back to echoing the context.
+6.  **Synthesize (`agent/synthesizer.py`):** Uses the combined context and the clarified question to generate a final answer. Attempts to use OpenAI (`gpt-4o-mini` by default) if the key is available; otherwise, falls back to echoing the context.
 7.  **Output:** Prints the final synthesized answer to the console.
 
 ```mermaid

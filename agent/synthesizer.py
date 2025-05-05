@@ -57,7 +57,7 @@ def synthesize_answer(question: str, context: str, verbose: bool = False) -> str
     synth_config = get_synthesizer_config() # Load config
 
     if openai_available and openai_api_key:
-        model_name = synth_config.get('model', 'gpt-3.5-turbo') # Get model from config
+        model_name = synth_config.get('model', 'gpt-4o-mini') # Get model from config
         if verbose:
             print(f"Attempting synthesis using OpenAI model: {model_name}")
         try:

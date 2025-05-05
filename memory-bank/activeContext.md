@@ -28,7 +28,11 @@ The current focus is on:
     - `run_agent` now returns `(final_answer, source_urls)`.
     - `main.py` now conditionally prints Processing panel, Source URLs panel, and Final Answer panel based on verbosity level.
 - **Updated Documentation:** Modified `README.md` to explain the new `config.yaml` system and verbosity levels.
-- **Updated Memory Bank:** This update reflects the changes above. (Self-reference for tracking).
+- **Implemented RAG Corpus Embedding:**
+    - Added `embed_corpus` function to `agent/rag.py` to process `.txt` and `.md` files.
+    - Modified `_initialize_rag` to automatically call `embed_corpus` if the ChromaDB collection is empty upon initialization.
+    - Refined RAG initialization logic to handle missing `OPENAI_API_KEY` more gracefully (warns and disables RAG instead of raising immediate error).
+- **Updated Memory Bank:** This update reflects all changes above, including RAG embedding. (Self-reference for tracking).
 
 ## Next Steps
 
@@ -42,7 +46,10 @@ The current focus is on:
     *   Run with quiet flag: `python3 main.py -q "..."` (Check for *only* Final Answer panel).
     *   Run with verbose flag: `python3 main.py -v "..."` (Check for Processing panel, intermediate agent steps, Sources panel, Final Answer panel).
     *   Test with different questions and configurations in `config.yaml`.
-    *   Optionally, test RAG functionality if configured.
+    *   Optionally, test RAG functionality:
+        *   Ensure `RAG_DOC_PATH` points to a directory with `.txt` or `.md` files.
+        *   Ensure `OPENAI_API_KEY` is set in `.env`.
+        *   Run with a question likely to hit the corpus, using default or verbose mode. Check for RAG context in verbose output and influence on the final answer.
 4.  **Run Automated Tests:**
     *   Execute `python3 -m pytest` (Note: Tests may need updates to reflect config changes or new return types if they interact deeply with `run_agent`).
 5.  **Address Issues:** Fix any bugs or unexpected behavior identified.
@@ -55,4 +62,4 @@ The current focus is on:
 - **Agent Output:** `run_agent` now returns both the answer and the list of source URLs.
 - **SSL Fix:** The implemented SSL fix targets common macOS issues by explicitly using `certifi` bundle.
 - **Testing:** Automated tests (`pytest`) might need updates to accommodate the new configuration system and `run_agent` return type.
-- **RAG:** RAG implementation remains basic.
+- **RAG:** RAG implementation now includes automatic corpus embedding from `RAG_DOC_PATH` on initialization if the vector store is empty. Basic querying functionality was already present.

@@ -88,7 +88,7 @@ Below is a **two-tier implementation roadmap**:
 1. `reasoner.py`: simple concatenation of snippets + optional RAG text into “context” string.
 2. `synthesizer.py`:
 
-   * Single OpenAI call (`gpt-3.5-turbo` unless key missing → fallback to echo).
+   * Single OpenAI call (`gpt-4o-mini` unless key missing → fallback to echo).
    * If no key: return formatted bullet list of sources as placeholder.
 3. Provide `synthesize_answer(question, context, verbose=False)`; if verbose print token counts.
 4. Commit: “Initial reasoning & synthesis.”
