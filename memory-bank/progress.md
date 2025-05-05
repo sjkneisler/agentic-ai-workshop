@@ -130,4 +130,6 @@ Thought for a couple of seconds
 * ✅ Added `unstructured` dependency for Markdown loading.
 * ✅ Switched RAG text splitting from `RecursiveCharacterTextSplitter` to `SemanticChunker`.
 * ✅ Restored RAG link following logic after Langchain refactor.
-* ✅ Added RAG external web link following (configurable via `config.yaml`).
+* ✅ Modified RAG indexing to store internal link target paths as a serialized string (`internal_linked_paths_str`) in chunk metadata (for Chroma compatibility).
+* ✅ Implemented RAG retrieval-time internal chunk link traversal (deserializing metadata string, configurable via `config.yaml`).
+* ✅ Implemented RAG retrieval-time external web link fetching (configurable via `config.yaml`).

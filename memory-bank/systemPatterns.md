@@ -79,21 +79,28 @@ Below is a **two-tier implementation roadmap**:
      * Initialize `OpenAIEmbeddings`.
      * Check if persistent Chroma store exists at `.rag_store/`.
      * If exists: Load using `Chroma(persist_directory=..., embedding_function=...)`.
-     * If not exists:
-       * Use `DirectoryLoader` with `TextLoader`/`UnstructuredMarkdownLoader` for initial load from `RAG_DOC_PATH`.
-       * Implement link-following loop (using helpers from `rag_utils`):
-           * Load linked local documents up to `max_depth` from config.
-           * **NEW:** If `rag_follow_external_links` is true in config, attempt to fetch content from external web links using `requests` and parse text using `BeautifulSoup`. Add fetched content as `Document` objects. Track visited URLs.
-       * Use `SemanticChunker` to split all collected documents (local and fetched web content).
-       * Create store using `Chroma.from_documents(..., persist_directory=...)`.
-   * Implement `query_vector_store(query)`:
+     * If not exists (Indexing):
+        * Use `DirectoryLoader` with `TextLoader`/`UnstructuredMarkdownLoader` for initial load from `RAG_DOC_PATH`.
+        * Implement internal document link-following loop (using helpers from `rag_utils`) up to `rag_initial_link_follow_depth` from config.
+        * **NEW:** Before chunking, iterate through loaded docs, extract internal links, resolve target file paths.
+        * **FIX:** Store the list of paths as a serialized string (`internal_linked_paths_str`, joined by `;;`) in metadata for Chroma compatibility.
+        * Use `SemanticChunker` to split all collected local documents.
+        * Create store using `Chroma.from_documents(..., persist_directory=...)`, ensuring metadata (including `internal_linked_paths_str`) is preserved on chunks.
+   * Implement `query_vector_store(query)` (Retrieval):
      * Ensure RAG is initialized.
-     * Get retriever using `vector_store.as_retriever()`.
-     * `retriever.invoke(query)` to get relevant `Document` objects.
-     * Extract page content for context string and 'source' metadata for source paths.
-     * Return `(context_string, source_paths)`.
+     * Perform initial semantic search: `retriever.invoke(query)` to get `initial_chunks`.
+     * **NEW (Optional Internal Traversal):** If `rag_follow_internal_chunk_links` is true:
+         * Perform breadth-first search starting from `initial_chunks`.
+         * Use `internal_linked_paths_str` metadata on chunks, deserialize the string back into a list of target file paths.
+         * For each target path, perform filtered similarity search: `vector_store.similarity_search(query, k=rag_internal_link_k, filter={'source': target_path})`.
+         * Collect unique linked chunks up to `rag_internal_link_depth`.
+     * **NEW (Optional External Fetching):** If `rag_follow_external_links` is true:
+         * Extract all `http/https` links from the content of *all* collected chunks (initial + linked).
+         * Fetch unique URLs using `requests`, parse with `BeautifulSoup`.
+     * Combine context from local chunks, linked chunks, and fetched web content.
+     * Extract and return unique source paths/URLs.
 3. Create `agent/rag_utils/ingestion.py` with `extract_links`, `is_web_link`, `resolve_link`.
-4. Commit: “Refactor RAG to use Langchain Indexing API with internal and optional external link following.”
+4. Commit: “Implement combined RAG: internal link metadata (serialized) indexing + retrieval-time chunk traversal & web fetching.”
 
 ### **Chunk 4 – Reasoning + Synthesis**
 

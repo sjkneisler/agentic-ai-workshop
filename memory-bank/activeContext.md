@@ -33,12 +33,14 @@ The current focus is on:
     - Modified `_initialize_rag` to automatically call `embed_corpus` if the ChromaDB collection is empty upon initialization.
     - Refined RAG initialization logic to handle missing `OPENAI_API_KEY` more gracefully (warns and disables RAG instead of raising immediate error).
 - **Updated Memory Bank:** This update reflects all changes above, including RAG embedding. (Self-reference for tracking).
-- **Enhanced RAG with Link Following:**
-    - Added capability to parse `[[WikiLinks]]` and `[Markdown](links.md)` within `.md` and `.txt` files during RAG ingestion (`agent/rag.py`).
-    - Implemented recursive link following up to a configurable depth (`rag_link_follow_depth` in `config.yaml`, default 3).
-    - Added link resolution logic (Root -> Current Dir -> Recursive Search).
-    - Created `agent/rag_utils/ingestion.py` for link parsing/resolution helpers.
-    - Stored link metadata (`internal_links`, `external_links`, `unresolved_links`) on document chunks.
+- **Enhanced RAG Indexing with Internal Link Metadata:**
+    - During indexing (`_initialize_rag`):
+        - Continues to follow internal document links (`[[WikiLinks]]`, `[Markdown](link.md)`) up to `rag_initial_link_follow_depth` to load all relevant local files.
+        - **NEW:** Before chunking, extracts internal links from each loaded document's content, resolves their target file paths.
+        - **FIX:** Stores the list of paths as a serialized string (`internal_linked_paths_str`, joined by `;;`) in metadata to ensure Chroma compatibility.
+        - Chunks documents using `SemanticChunker`, propagating the `internal_linked_paths_str` metadata to derived chunks.
+        - Stores chunks with source path and `internal_linked_paths_str` metadata in Chroma.
+        - External web links are *no longer* fetched during indexing.
 - **Enhanced RAG Output:**
     - Modified `agent/rag.py` (`query_vector_store`) to return source file paths.
     - Updated `agent/__init__.py` (`run_agent`) to return RAG source paths.
@@ -62,13 +64,15 @@ The current focus is on:
 - **Restored RAG Link Following (Post-Langchain Refactor):**
     - Re-created `agent/rag_utils/ingestion.py`.
     - Modified `agent/rag.py`'s `_initialize_rag` to perform link traversal *after* initial loading via `DirectoryLoader` but *before* splitting with `SemanticChunker`.
-- **Added RAG External Web Link Following:**
-    - Added `requests` and `beautifulsoup4` to `requirements.txt`.
-    - Added `rag_follow_external_links` boolean setting to `config.yaml` (default `False`).
-    - Modified `agent/rag.py` (`_initialize_rag`) to fetch content from external `http/https` links found during document traversal if the setting is enabled.
-    - Uses `requests` to fetch and `BeautifulSoup` to parse basic text content from web pages.
-    - Adds fetched web content as `Document` objects with the URL as the source.
-    - Tracks visited URLs to avoid redundant fetching.
+- **Enhanced RAG Retrieval with Link Traversal & Web Fetching:**
+    - Modified `query_vector_store` in `agent/rag.py`.
+    - Added new config options: `rag_follow_internal_chunk_links` (bool), `rag_internal_link_depth` (int), `rag_internal_link_k` (int).
+    - **Retrieval Flow:**
+        1. Performs initial semantic search for relevant chunks.
+        2. **(Optional) Internal Chunk Traversal:** If `rag_follow_internal_chunk_links` is true, retrieves the `internal_linked_paths_str` metadata, splits it back into a list of paths, and uses these paths to perform filtered similarity searches for linked chunks in other documents, up to `rag_internal_link_depth`. Collects unique linked chunks.
+        3. **(Optional) External Web Fetching:** If `rag_follow_external_links` is true, extracts all `http/https` links from the content of *all* collected chunks (initial + internally linked). Fetches content using `requests`/`BeautifulSoup` on the fly.
+        4. Combines context from initial chunks, internally linked chunks, and fetched web pages.
+        5. Returns combined context and a list of all contributing sources (local file paths and fetched web URLs).
 
 ## Next Steps
 
@@ -77,16 +81,18 @@ The current focus is on:
 2.  **Configure Environment & Config:**
     *   Ensure `.env` has valid `SERPER_API_KEY` and `OPENAI_API_KEY` (now required for RAG).
     *   Ensure `RAG_DOC_PATH` in `.env` points to a directory with `.txt` or `.md` files (including some with internal *and external* links for testing).
-    *   Review/modify `config.yaml`, especially `rag_link_follow_depth` and the new `rag_follow_external_links` setting.
+    *   Review/modify `config.yaml`, especially the RAG section: `rag_initial_link_follow_depth`, `rag_follow_external_links`, `rag_follow_internal_chunk_links`, `rag_internal_link_depth`, `rag_internal_link_k`.
 3.  **Manual Testing (Focus on RAG):**
     *   Delete the `.rag_store` directory if it exists from previous incompatible versions.
     *   Run with default/verbose mode: `python3 main.py "..."`
     *   Verify RAG initialization messages (document loading, splitting, store creation).
     *   Ask questions designed to trigger retrieval from specific documents and linked documents.
     *   Check the "Sources Used (Local Documents)" panel in the output.
-    *   Check verbose output (`-v`) for details on document loading, internal/external link following, chunking, and retrieval steps.
-    *   Test different `rag_link_follow_depth` values and `rag_follow_external_links` (True/False) in `config.yaml`.
-    *   Verify that web sources are correctly identified in the output when external following is enabled.
+    *   Check verbose output (`-v`) for details on document loading, metadata storage, initial retrieval, internal chunk traversal (if enabled), external web fetching (if enabled), and final context/sources.
+    *   Test different combinations of RAG settings in `config.yaml` (e.g., internal traversal on/off, external fetching on/off, different depths/k values).
+    *   Verify that context from internally linked chunks appears when expected.
+    *   Verify that context from external web pages appears when expected.
+    *   Verify that the "Sources Used" panel correctly lists local files and fetched URLs.
 4.  **Run Automated Tests:**
     *   Execute `python3 -m pytest`. Tests interacting with RAG will likely need significant updates or mocking due to the Langchain refactor.
 5.  **Address Issues:** Fix any bugs identified during testing.
@@ -99,5 +105,7 @@ The current focus is on:
 - **Agent Output:** `run_agent` now returns both the answer and the list of source URLs.
 - **SSL Fix:** The implemented SSL fix targets common macOS issues by explicitly using `certifi` bundle.
 - **Testing:** Automated tests (`pytest`) might need updates to accommodate the new configuration system and `run_agent` return type.
-- **RAG:** RAG implementation heavily refactored to use the Langchain Indexing API (`DirectoryLoader`, `SemanticChunker`, `OpenAIEmbeddings`, `Chroma`). It includes automatic corpus embedding/link-following on initialization if the vector store is empty or incompatible. Querying uses the Langchain retriever interface. Internal link following depth is configurable via `rag_link_follow_depth`. **NEW:** Optionally fetches and includes content from external web links (`http/https`) found in documents, controlled by `rag_follow_external_links` in `config.yaml`.
-- **Agent Output:** `run_agent` now returns `(final_answer, web_source_urls, rag_source_paths)`. `main.py` displays both web and local sources (including fetched web URLs if applicable).
+- **RAG:** RAG implementation uses Langchain Indexing API (`DirectoryLoader`, `SemanticChunker`, `OpenAIEmbeddings`, `Chroma`).
+    - **Indexing:** Follows internal document links up to `rag_initial_link_follow_depth`. Stores resolved target file paths from internal links as a serialized string (`internal_linked_paths_str`) in metadata on chunks (due to Chroma limitations) before saving to Chroma. Does *not* fetch external links during indexing.
+    - **Retrieval:** Performs initial semantic search. Optionally traverses internal links *between chunks* by deserializing the stored `internal_linked_paths_str` metadata and performing filtered searches (controlled by `rag_follow_internal_chunk_links`, `rag_internal_link_depth`, `rag_internal_link_k`). Optionally fetches external web links found in collected chunks on the fly (controlled by `rag_follow_external_links`). Combines all context.
+- **Agent Output:** `run_agent` now returns `(final_answer, web_source_urls, rag_source_paths)`. `main.py` displays both web and local sources (including fetched web URLs and sources from internally linked chunks).

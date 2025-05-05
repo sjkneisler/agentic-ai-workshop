@@ -119,11 +119,11 @@ def _initialize_rag(verbose: bool = False) -> Optional[Chroma]:
 
             # --- Configuration for Link Following ---
             rag_config = get_rag_config()
-            max_depth = rag_config.get('link_follow_depth', 3) # Default internal depth
-            follow_external = rag_config.get('rag_follow_external_links', False) # Get external link setting
+            # Renamed config key for clarity
+            initial_max_depth = rag_config.get('rag_initial_link_follow_depth', 3)
+            # External link following is now done at query time
             if verbose:
-                print(f"Max internal link follow depth: {max_depth}")
-                print(f"Follow external web links: {follow_external}")
+                print(f"Max internal DOCUMENT link follow depth during indexing: {initial_max_depth}")
 
             # --- Initial Document Load ---
             initial_docs: List[Document] = []
@@ -155,11 +155,10 @@ def _initialize_rag(verbose: bool = False) -> Optional[Chroma]:
             queue: deque[Tuple[Document, int]] = deque([(doc, 0) for doc in initial_docs]) # Queue stores (Document, depth)
             # Use resolved absolute paths for visited file tracking
             visited_files: Set[Path] = set()
-            # Use URLs for visited web link tracking
-            visited_urls: Set[str] = set()
+            # Web fetching and related tracking removed from initialization
+            visited_files: Set[Path] = set()
 
             processed_files_count = 0
-            processed_urls_count = 0
             while queue:
                 current_doc, current_depth = queue.popleft()
 
@@ -177,7 +176,8 @@ def _initialize_rag(verbose: bool = False) -> Optional[Chroma]:
                      continue
 
                 # Skip if already processed or depth exceeded
-                if current_file_path in visited_files or (max_depth > 0 and current_depth >= max_depth): # Only check depth if max_depth > 0
+                # Use initial_max_depth for document traversal during indexing
+                if current_file_path in visited_files or (initial_max_depth > 0 and current_depth >= initial_max_depth):
                     # Still add the document itself to the final list if not already added at this depth
                     # Check if this exact doc object is already there (might be redundant but safe)
                     if current_doc not in final_docs:
@@ -193,54 +193,15 @@ def _initialize_rag(verbose: bool = False) -> Optional[Chroma]:
                     except ValueError: log_path = current_file_path
                     print(f"  [Depth {current_depth}] Processing links in: {log_path}")
 
-                # Extract links only if depth allows further traversal
-                if max_depth == 0 or current_depth < max_depth:
+                # Extract internal links only if depth allows further document traversal
+                if initial_max_depth == 0 or current_depth < initial_max_depth:
                     links = extract_links(current_doc.page_content)
                     for _link_text, link_target in links:
-                        # --- Handle Web Links ---
+                        # Skip web links during initial document loading
                         if is_web_link(link_target):
-                            if follow_external and link_target not in visited_urls:
-                                if verbose: print(f"    Attempting to fetch external link: {link_target}")
-                                try:
-                                    response = requests.get(link_target, timeout=10, headers={'User-Agent': 'RooResearchAgent/1.0'}) # Added User-Agent
-                                    response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                            continue
 
-                                    # Basic HTML parsing with BeautifulSoup
-                                    soup = BeautifulSoup(response.content, 'html.parser')
-
-                                    # Remove script and style elements
-                                    for script_or_style in soup(["script", "style"]):
-                                        script_or_style.decompose()
-
-                                    # Get text, strip leading/trailing whitespace, join lines
-                                    body_text = soup.get_text(separator='\n', strip=True)
-
-                                    if body_text:
-                                        web_doc = Document(
-                                            page_content=body_text,
-                                            metadata={'source': link_target, 'title': soup.title.string if soup.title else link_target} # Use URL as source
-                                        )
-                                        final_docs.append(web_doc)
-                                        visited_urls.add(link_target)
-                                        processed_urls_count += 1
-                                        if verbose: print(f"      Successfully fetched and parsed content from: {link_target}")
-                                    else:
-                                        if verbose: print(f"      No text content extracted from: {link_target}")
-
-                                except requests.exceptions.RequestException as req_err:
-                                    warnings.warn(f"Failed to fetch external link {link_target}: {req_err}")
-                                except Exception as parse_err:
-                                     warnings.warn(f"Failed to parse content from {link_target}: {parse_err}")
-                                finally:
-                                     visited_urls.add(link_target) # Add even if failed to prevent retries
-
-                            elif verbose and link_target in visited_urls:
-                                 print(f"    Skipping already visited external link: {link_target}")
-                            elif verbose and not follow_external:
-                                 print(f"    Skipping external link (disabled): {link_target}")
-                            continue # Move to next link after handling web link
-
-                        # --- Handle Internal Links (Existing Logic) ---
+                        # --- Handle Internal Links (Document Loading) ---
                         resolved_path = resolve_link(link_target, current_file_path, rag_doc_path)
 
                         # Check if resolved, is a file, is supported type, and not visited (file)
@@ -270,8 +231,31 @@ def _initialize_rag(verbose: bool = False) -> Optional[Chroma]:
                             except Exception as link_load_err:
                                 warnings.warn(f"Error loading linked file {resolved_path}: {link_load_err}")
         
-                    if verbose: print(f"--- Finished Link Following: Processed {processed_files_count} unique files and {processed_urls_count} unique web URLs. Total documents for splitting: {len(final_docs)} ---")
-        
+                    if verbose: print(f"--- Finished Initial Document Link Following: Processed {processed_files_count} unique local files. Total documents collected: {len(final_docs)} ---")
+
+                    # --- Add Internal Link Metadata BEFORE Chunking ---
+                    if verbose: print("--- Adding internal link metadata to documents ---")
+                    for doc in final_docs:
+                        if 'source' in doc.metadata:
+                            try:
+                                doc_path = Path(doc.metadata['source']).resolve()
+                                internal_links = extract_links(doc.page_content)
+                                linked_paths = []
+                                for _, target in internal_links:
+                                    if not is_web_link(target):
+                                        resolved = resolve_link(target, doc_path, rag_doc_path)
+                                        if resolved and resolved.is_file():
+                                            linked_paths.append(str(resolved)) # Store absolute path string
+                                if linked_paths:
+                                    # Serialize list into a single string for Chroma compatibility
+                                    doc.metadata['internal_linked_paths_str'] = ";;".join(linked_paths)
+                                    if verbose: print(f"  Added {len(linked_paths)} internal link targets (as string) to metadata for: {doc_path.relative_to(rag_doc_path)}")
+                            except Exception as meta_err:
+                                warnings.warn(f"Error processing links for metadata in {doc.metadata.get('source', 'Unknown')}: {meta_err}")
+                        else:
+                             warnings.warn(f"Skipping link metadata addition for doc missing source: {doc.page_content[:100]}...")
+
+
                     # --- Split all collected documents ---
             if not final_docs:
                  warnings.warn("No documents available after loading and link following. RAG cannot be initialized.")
@@ -328,6 +312,8 @@ def _initialize_rag(verbose: bool = False) -> Optional[Chroma]:
 def query_vector_store(query: str, n_results: int = 3, verbose: bool = False) -> Tuple[str, List[str]]:
     """
     Queries the Langchain vector store for context relevant to the query.
+    Optionally traverses internal links between retrieved chunks and fetches
+    external web links found in the collected context.
 
     Args:
         query: The query string to search for in the vector store.
@@ -336,8 +322,8 @@ def query_vector_store(query: str, n_results: int = 3, verbose: bool = False) ->
 
     Returns:
         A tuple containing:
-        - A string with relevant context retrieved from the store.
-        - A list of unique source file paths from which the context was retrieved.
+        - A string with relevant context from initial retrieval, internal chunk traversal, and external web fetching.
+        - A list of unique source file paths/URLs contributing to the context.
         Returns ("", []) if RAG is disabled, not initialized, or no context found.
     """
     if verbose:
@@ -351,58 +337,160 @@ def query_vector_store(query: str, n_results: int = 3, verbose: bool = False) ->
         if verbose: print("RAG is not enabled or vector store failed to initialize. Skipping query.")
         return "", []
 
-    rag_context = ""
-    rag_source_paths: List[str] = []
+    final_context_parts: List[str] = []
+    final_sources: Set[str] = set()
+    collected_chunks: Dict[str, Document] = {} # Use dict to store chunks by ID for easy lookup
 
     try:
-        # Create a retriever
+        # --- Step 1: Initial Retrieval ---
+        if verbose: print(f"--- Performing initial retrieval (k={n_results}) ---")
         retriever = vector_store.as_retriever(search_kwargs={'k': n_results})
+        initial_chunks: List[Document] = retriever.invoke(query)
 
-        # Retrieve relevant documents
-        retrieved_docs: List[Document] = retriever.invoke(query)
+        if not initial_chunks:
+            if verbose: print("No relevant documents found in initial retrieval.")
+            return "", []
 
-        if retrieved_docs:
-            # Concatenate document content
-            rag_context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+        for chunk in initial_chunks:
+             # Assuming Chroma adds a unique ID or we can generate one
+             # Langchain docs often have IDs, let's assume vector_store assigns them or they exist in metadata
+             # If not, we might need to hash content or use index. Fallback needed.
+             chunk_id = chunk.metadata.get('id', str(hash(chunk.page_content))) # Example ID generation
+             if chunk_id not in collected_chunks:
+                 collected_chunks[chunk_id] = chunk
 
-            # Extract unique source paths from metadata
-            unique_sources = set()
-            for doc in retrieved_docs:
-                if doc.metadata and isinstance(doc.metadata, dict) and 'source' in doc.metadata:
-                    source_val = str(doc.metadata['source'])
-                    # Check if it's a web link (simple check)
-                    if source_val.startswith('http://') or source_val.startswith('https://'):
-                        unique_sources.add(source_val) # Add URL directly
+        if verbose: print(f"Retrieved {len(collected_chunks)} initial unique chunks.")
+
+        # --- Step 2: Internal Chunk Link Traversal ---
+        rag_config = get_rag_config()
+        follow_internal_chunks = rag_config.get('rag_follow_internal_chunk_links', False)
+        internal_link_depth = rag_config.get('rag_internal_link_depth', 1)
+        internal_link_k = rag_config.get('rag_internal_link_k', 2)
+
+        if follow_internal_chunks and internal_link_depth > 0:
+            if verbose: print(f"--- Traversing internal chunk links (max_depth={internal_link_depth}, k={internal_link_k}) ---")
+            queue: deque[Tuple[str, int]] = deque([(cid, 0) for cid in collected_chunks]) # Queue of (chunk_id, depth)
+            visited_chunk_ids_for_traversal = set(collected_chunks.keys()) # Track visited during traversal
+
+            while queue:
+                current_chunk_id, current_depth = queue.popleft()
+
+                if current_depth >= internal_link_depth:
+                    continue
+
+                current_chunk = collected_chunks.get(current_chunk_id)
+                # Check for the serialized string metadata key
+                if not current_chunk or 'internal_linked_paths_str' not in current_chunk.metadata:
+                    continue
+
+                # Deserialize the string back into a list
+                linked_paths_str = current_chunk.metadata['internal_linked_paths_str']
+                if not linked_paths_str or not isinstance(linked_paths_str, str):
+                    continue # Skip if empty or not a string
+                linked_paths = linked_paths_str.split(";;")
+
+                if verbose: print(f"  [Depth {current_depth}] Chunk from '{current_chunk.metadata.get('source', 'Unknown')}' links to {len(linked_paths)} files.")
+
+                for target_path_str in linked_paths:
+                    if verbose: print(f"    Searching for chunks related to query in linked file: {target_path_str}")
+                    try:
+                        # Perform filtered search using the *original query*
+                        linked_retriever = vector_store.as_retriever(
+                            search_kwargs={'k': internal_link_k, 'filter': {'source': target_path_str}}
+                        )
+                        found_linked_chunks = linked_retriever.invoke(query)
+
+                        if verbose: print(f"      Found {len(found_linked_chunks)} chunks in {target_path_str}.")
+
+                        for linked_chunk in found_linked_chunks:
+                            linked_chunk_id = linked_chunk.metadata.get('id', str(hash(linked_chunk.page_content)))
+                            if linked_chunk_id not in visited_chunk_ids_for_traversal:
+                                visited_chunk_ids_for_traversal.add(linked_chunk_id)
+                                collected_chunks[linked_chunk_id] = linked_chunk # Add to overall collection
+                                queue.append((linked_chunk_id, current_depth + 1))
+                                if verbose: print(f"        Added linked chunk (ID: {linked_chunk_id}) from {target_path_str} to results and queue.")
+
+                    except Exception as search_err:
+                        warnings.warn(f"Error performing filtered search for linked path {target_path_str}: {search_err}")
+
+        # --- Step 3: Extract Content and External Links from ALL Collected Chunks ---
+        if verbose: print(f"--- Processing {len(collected_chunks)} total collected chunks (initial + linked) ---")
+        external_links_to_fetch = set()
+        rag_doc_path_env = os.getenv("RAG_DOC_PATH", ".") # Get base path for relative sources
+
+        for chunk_id, chunk in collected_chunks.items():
+            final_context_parts.append(chunk.page_content)
+            # Add source
+            if chunk.metadata and 'source' in chunk.metadata:
+                 source_val = str(chunk.metadata['source'])
+                 # Try to make local paths relative
+                 try:
+                     source_path = Path(source_val)
+                     # Check if it's absolute or resolve relative to CWD before making relative to RAG path
+                     if source_path.is_absolute():
+                          relative_path = str(source_path.relative_to(Path(rag_doc_path_env).resolve()))
+                          final_sources.add(relative_path)
+                     elif source_path.resolve().is_relative_to(Path(rag_doc_path_env).resolve()):
+                          relative_path = str(source_path.resolve().relative_to(Path(rag_doc_path_env).resolve()))
+                          final_sources.add(relative_path)
+                     else:
+                          final_sources.add(source_val) # Use original if not relative to RAG path
+                 except (ValueError, TypeError, OSError):
+                      final_sources.add(source_val) # Fallback on error
+            # Extract external links
+            links_in_chunk = extract_links(chunk.page_content)
+            for _, link_target in links_in_chunk:
+                if is_web_link(link_target):
+                    external_links_to_fetch.add(link_target)
+
+        # --- Step 4: Fetch External Links if Enabled ---
+        follow_external = rag_config.get('rag_follow_external_links', False)
+        fetched_web_sources = set()
+
+        if follow_external and external_links_to_fetch:
+            if verbose: print(f"--- Fetching {len(external_links_to_fetch)} unique external links found in collected chunks ---")
+            for link_target in external_links_to_fetch:
+                if verbose: print(f"  Fetching: {link_target}")
+                try:
+                    response = requests.get(link_target, timeout=10, headers={'User-Agent': 'RooResearchAgent/1.0'})
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    for script_or_style in soup(["script", "style"]):
+                        script_or_style.decompose()
+                    body_text = soup.get_text(separator='\n', strip=True)
+
+                    if body_text:
+                        fetched_content = f"--- Content from {link_target} ---\n{body_text}\n--- End Content from {link_target} ---"
+                        final_context_parts.append(fetched_content)
+                        fetched_web_sources.add(link_target)
+                        if verbose: print(f"    Successfully fetched and parsed.")
                     else:
-                        # Try to make local paths relative
-                        try:
-                             rag_doc_path = Path(os.getenv("RAG_DOC_PATH", "."))
-                             source_path = Path(source_val)
-                             # Check if the source path is absolute or relative to the CWD
-                             # If it's not inside the RAG_DOC_PATH, just use the original string
-                             if source_path.is_absolute() or source_path.resolve().is_relative_to(Path.cwd()):
-                                 relative_path = str(source_path.relative_to(rag_doc_path))
-                                 unique_sources.add(relative_path)
-                             else:
-                                 unique_sources.add(source_val) # Use original if not relative to RAG path
-                        except (ValueError, TypeError, OSError): # Added OSError for path issues
-                             unique_sources.add(source_val) # Fallback to original path string on error
-            rag_source_paths = sorted(list(unique_sources))
+                        if verbose: print(f"    No text content extracted.")
+                except requests.exceptions.RequestException as req_err:
+                    warnings.warn(f"Failed to fetch external link {link_target} during query: {req_err}")
+                except Exception as parse_err:
+                     warnings.warn(f"Failed to parse content from {link_target} during query: {parse_err}")
 
-            if verbose:
-                print(f"Retrieved {len(retrieved_docs)} document chunks.")
-                print(f"Sources: {rag_source_paths}")
-        elif verbose:
-            print("No relevant documents found in vector store for this query.")
+            final_sources.update(fetched_web_sources) # Add successfully fetched URLs to sources
+
+        # --- Step 5: Combine and Return ---
+        final_rag_context = "\n\n".join(final_context_parts)
+        final_rag_source_paths = sorted(list(final_sources))
+
+        if verbose:
+             print(f"--- Final RAG Results ---")
+             print(f"Total Chunks Contributed (Initial + Linked): {len(collected_chunks)}")
+             print(f"External URLs Fetched: {len(fetched_web_sources)}")
+             print(f"Final Sources: {final_rag_source_paths}")
+
+        return final_rag_context, final_rag_source_paths
 
     except Exception as e:
-        warnings.warn(f"Error querying Langchain vector store: {e}")
+        warnings.warn(f"Error during RAG query processing: {e}")
         if verbose:
             import traceback
             traceback.print_exc()
-        rag_context = ""
-        rag_source_paths = []
-
-    return rag_context, rag_source_paths
+        # Return empty results on error
+        return "", []
 
 # Note: embed_corpus function is removed as Langchain handles the process.

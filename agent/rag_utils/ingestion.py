@@ -9,6 +9,7 @@ def extract_links(content: str) -> List[Tuple[str, str]]:
     """Extracts Markdown and Wiki-style links from text content."""
     links = []
     # Markdown links: [text](target)
+    warnings.warn(content);
     markdown_links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', content)
     for text, target in markdown_links:
         links.append((text, target.strip()))

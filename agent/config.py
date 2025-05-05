@@ -20,8 +20,11 @@ DEFAULT_CONFIG = {
         'num_results': 5
     },
     'rag': {
-        'link_follow_depth': 3, # Default depth for following Markdown links
-        'rag_follow_external_links': False # Default to not following external links
+        'rag_initial_link_follow_depth': 3, # Max depth for following internal doc links during INITIAL indexing
+        'rag_follow_external_links': True, # Fetch external web links found in retrieved chunks at QUERY time?
+        'rag_follow_internal_chunk_links': True, # Follow internal links between CHUNKS at QUERY time?
+        'rag_internal_link_depth': 1,       # Max depth for internal chunk link traversal at QUERY time
+        'rag_internal_link_k': 2            # How many related chunks to retrieve per internal link at QUERY time
     }
     # Add defaults for other sections like 'clarifier' if needed
 }
