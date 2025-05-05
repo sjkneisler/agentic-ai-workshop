@@ -18,6 +18,10 @@ DEFAULT_CONFIG = {
     },
     'search': {
         'num_results': 5
+    },
+    'rag': {
+        'link_follow_depth': 3, # Default depth for following Markdown links
+        'rag_follow_external_links': False # Default to not following external links
     }
     # Add defaults for other sections like 'clarifier' if needed
 }
@@ -59,6 +63,9 @@ def get_synthesizer_config() -> Dict[str, Any]:
 
 def get_search_config() -> Dict[str, Any]:
     return CONFIG.get('search', DEFAULT_CONFIG['search'])
+
+def get_rag_config() -> Dict[str, Any]:
+    return CONFIG.get('rag', DEFAULT_CONFIG['rag'])
 
 # Add getters for other sections as needed
 # def get_clarifier_config()...

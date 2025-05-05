@@ -34,19 +34,22 @@ Thought for a couple of seconds
 
 ---
 
-#### ✅ Chunk 3 – RAG Skeleton (Chroma + OpenAI)
 
-* ✅ Add `chromadb`, `openai`, `tiktoken` to requirements
+#### ✅ Chunk 3 – RAG Skeleton (Langchain Implementation)
+
+* ✅ Add `langchain`, `langchain-community`, `langchain-openai`, `langchain-chroma`, `unstructured` to requirements
 * ✅ `rag.py`:
-
-  * ✅ Detect `RAG_DOC_PATH`; skip gracefully if absent
-  * ✅ Load/create Chroma DB under `.rag_store/`
-  * ✅ `query_vector_store()` returns text blob
-  * ✅ Error message if `OPENAI_API_KEY` missing when needed
-* ✅ Commit: **“RAG stub with Chroma+OpenAI embeddings”**
+  * ✅ Detect `RAG_DOC_PATH`; skip gracefully if absent.
+  * ✅ Load/create Chroma DB using Langchain (`Chroma`, `OpenAIEmbeddings`) under `.rag_store/`.
+  * ✅ Implement document loading (`DirectoryLoader`, `TextLoader`, `UnstructuredMarkdownLoader`).
+  * ✅ Implement link following logic (using `rag_utils.ingestion`).
+  * ✅ Implement semantic chunking (`SemanticChunker`).
+  * ✅ `query_vector_store()` returns `(context, source_paths)` using Langchain retriever.
+  * ✅ Error message if `OPENAI_API_KEY` missing.
+* ✅ Create `agent/rag_utils/ingestion.py` with link helpers.
+* ✅ Commit: **“Refactor RAG to use Langchain Indexing API with link following”**
 
 ---
-
 #### ✅ Chunk 4 – Reasoning + Synthesis
 
 * ✅ `reasoner.reason_over_sources()` → merge snippets (search + rag)
@@ -120,3 +123,11 @@ Thought for a couple of seconds
 * ✅ Implemented verbosity levels (`--quiet`, default, `--verbose`) in `main.py` and `agent/__init__.py`.
 * ✅ Updated `README.md` and Memory Bank files to reflect recent changes.
 * ✅ Implemented automatic RAG corpus embedding in `agent/rag.py` (processes `.txt`/`.md` files from `RAG_DOC_PATH` on init if DB is empty).
+* ✅ Added RAG link following (`[[WikiLinks]]`, `[Markdown](link.md)`) up to configurable depth.
+* ✅ Added display of RAG source documents to `main.py` output.
+* ✅ Refactored RAG implementation to use Langchain Indexing API (`DirectoryLoader`, `OpenAIEmbeddings`, `Chroma`).
+* ✅ Addressed Langchain/Chroma deprecation warning (`langchain-chroma`).
+* ✅ Added `unstructured` dependency for Markdown loading.
+* ✅ Switched RAG text splitting from `RecursiveCharacterTextSplitter` to `SemanticChunker`.
+* ✅ Restored RAG link following logic after Langchain refactor.
+* ✅ Added RAG external web link following (configurable via `config.yaml`).

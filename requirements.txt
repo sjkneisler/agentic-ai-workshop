@@ -8,6 +8,13 @@ tiktoken==0.9.0
 
 # RAG related
 chromadb  # Version not found in pip freeze output
+langchain # Core Langchain library
+langchain-community # For loaders, splitters, vector stores
+langchain-openai # For OpenAI embeddings
+langchain-chroma # Updated Chroma integration
+unstructured # Dependency for UnstructuredMarkdownLoader
+markdown
+langchain-experimental
 
 # Testing
 pytest    # Version not found in pip freeze output
@@ -15,3 +22,5 @@ pytest    # Version not found in pip freeze output
 # Optional for nice output
 rich      # Version not found in pip freeze output
 PyYAML>=6.0 # For parsing config.yaml
+requests
+beautifulsoup4

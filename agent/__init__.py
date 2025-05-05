@@ -55,7 +55,7 @@ def _print_verbose(message: str, title: str = "", style: str = "blue"):
             print(message)
 
 
-def run_agent(question: str, verbosity_level: int = 1) -> Tuple[str, List[str]]:
+def run_agent(question: str, verbosity_level: int = 1) -> Tuple[str, List[str], List[str]]:
     """
     Main entry point to run the full agent pipeline.
 
@@ -68,8 +68,9 @@ def run_agent(question: str, verbosity_level: int = 1) -> Tuple[str, List[str]]:
     Returns:
         A tuple containing:
             - The final synthesized answer string.
-            - A list of source URLs used (from search results).
-        Returns an error message and empty list if a critical step fails.
+            - A list of web source URLs used (from search results).
+            - A list of local RAG source file paths used.
+        Returns an error message and empty lists if a critical step fails.
     """
     is_verbose = verbosity_level == 2 # Check if we are in verbose mode
 
@@ -78,7 +79,8 @@ def run_agent(question: str, verbosity_level: int = 1) -> Tuple[str, List[str]]:
 
 
     final_answer = "Agent pipeline encountered an unexpected issue." # Default error message
-    source_urls: List[str] = [] # Initialize list for URLs
+    web_source_urls: List[str] = [] # Initialize list for URLs
+    rag_source_paths: List[str] = [] # Initialize list for RAG file paths
 
     try:
         # --- Pass verbose flag to each module ---
@@ -98,18 +100,19 @@ def run_agent(question: str, verbosity_level: int = 1) -> Tuple[str, List[str]]:
         if is_verbose: _print_verbose(f"Step 3: Executing Planned Steps ({', '.join(planned_steps)})", style="magenta")
         search_results: List[Dict[str, Any]] = []
         rag_context: str = ""
-        # source_urls already initialized above
+        # web_source_urls and rag_source_paths initialized above
 
         if "search" in planned_steps:
             search_results = search.serper_search(clarified_question, verbose=is_verbose)
             # --- Extract URLs ---
-            source_urls = [result.get("link", "N/A") for result in search_results if result.get("link")]
+            web_source_urls = [result.get("link", "N/A") for result in search_results if result.get("link")]
             # ---
         else:
              if is_verbose: _print_verbose("Skipping search step based on plan.", style="yellow")
 
         if "rag" in planned_steps:
-            rag_context = rag.query_vector_store(clarified_question, verbose=is_verbose)
+            # query_vector_store now returns (context, source_paths)
+            rag_context, rag_source_paths = rag.query_vector_store(clarified_question, verbose=is_verbose)
         else:
              if is_verbose: _print_verbose("Skipping RAG step based on plan.", style="yellow")
 
@@ -132,7 +135,8 @@ def run_agent(question: str, verbosity_level: int = 1) -> Tuple[str, List[str]]:
         if verbosity_level >= 1:
              _print_verbose(error_msg, title="Pipeline Error", style="bold red")
         final_answer = f"Agent stopped due to a configuration error: {e}"
-        source_urls = [] # Ensure empty list on error
+        web_source_urls = [] # Ensure empty list on error
+        rag_source_paths = [] # Ensure empty list on error
     except Exception as e:
         # Catch any other unexpected errors during the flow
         error_msg = f"Unexpected Error: {e}"
@@ -146,10 +150,11 @@ def run_agent(question: str, verbosity_level: int = 1) -> Tuple[str, List[str]]:
                 else:
                     traceback.print_exc()
         final_answer = f"Agent encountered an unexpected error: {e}"
-        source_urls = [] # Ensure empty list on error
+        web_source_urls = [] # Ensure empty list on error
+        rag_source_paths = [] # Ensure empty list on error
 
 
-    return final_answer, source_urls
+    return final_answer, web_source_urls, rag_source_paths
 
 # Make the function easily importable
 __all__ = ['run_agent']

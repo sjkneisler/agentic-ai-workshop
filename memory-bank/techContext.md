@@ -6,13 +6,19 @@
 - **Package Management:** pip (via `requirements.txt`)
 - **Core Libraries:**
     - `python-dotenv`: For managing environment variables (`.env`).
-    - `PyYAML`: For parsing configuration file (`config.yaml`). - NEW
-    - `requests`: For making HTTP requests to the Serper API.
-    - `openai`: For interacting with OpenAI models (clarification, synthesis, RAG embeddings).
-    - `chromadb`: For local vector storage and retrieval (RAG).
-    - `tiktoken`: For token counting (used with OpenAI).
+    - `PyYAML`: For parsing configuration file (`config.yaml`).
+    - `requests`: For making HTTP requests (Serper API, RAG web fetching). - UPDATED
+    - `beautifulsoup4`: For parsing HTML content from RAG web fetching. - NEW
+    - `openai`: For interacting with OpenAI models (clarification, synthesis).
+    - `langchain`: Core Langchain library. - NEW
+    - `langchain-community`: Langchain community components (loaders, splitters). - NEW
+    - `langchain-openai`: Langchain OpenAI integrations (embeddings). - NEW
+    - `langchain-chroma`: Langchain Chroma vector store integration. - NEW
+    - `chromadb`: Underlying vector store (used via `langchain-chroma`).
+    - `unstructured`: Document parsing library (dependency for Markdown loader). - NEW
+    - `tiktoken`: For token counting (used with OpenAI/Langchain).
     - `rich` (optional): For enhanced terminal output (colors, formatting).
-    - `certifi`: Used internally for SSL certificate handling. - NEW (Implicit dependency, but good to note)
+    - `certifi`: Used internally for SSL certificate handling.
 - **Testing:** `pytest`
 - **External APIs:**
     - Serper API (for web search results)
@@ -35,6 +41,6 @@
 
 ## Dependencies
 
-- See `requirements.txt` for specific package versions (includes `PyYAML`). Pinning was attempted during the v0.1.0 polish pass, though some versions might require manual verification based on the specific Python environment used.
-- Assumes standard Python installation and network access for API calls.
-- SSL certificate verification relies on the `certifi` package, which is automatically installed/updated by the SSL fix logic if needed, or included in `requirements.txt`.
+- See `requirements.txt` for specific packages and versions (includes `PyYAML`, `langchain` suite, `unstructured`, `requests`, `beautifulsoup4`, etc.). Pinning should be reviewed/updated.
+- Assumes standard Python installation and network access for API calls and dependency installation.
+- SSL certificate verification relies on the `certifi` package.

@@ -15,7 +15,7 @@ Below is a **two-tier implementation roadmap**:
 | **0**   | *Repo Bootstrap*                | Git repo initialized with layout skeleton, config, and minimal tooling.                      |
 | **1**   | *Core Runtime Skeleton*         | `main.py` CLI shell + `agent/` package with empty module stubs & docstrings.                 |
 | **2**   | *Serper Search Integration*     | Working `search.py` that calls Serper, env-driven.                                           |
-| **3**   | *RAG Skeleton (Chroma+OpenAI)*  | `rag.py` loading user corpus & returning text (fails gracefully when absent).                |
+| **3**   | *RAG Skeleton (Langchain)*      | `rag.py` using Langchain (Loaders, Splitter, Embeddings, Chroma) to load/query corpus.       |
 | **4**   | *Reasoning + Synthesis Modules* | Implement `reasoner.py` and `synthesizer.py` (single-pass, concise default / verbose trace). |
 | **5**   | *Planner & Clarifier*           | Simple rule-based planner + optional clarifier prompt.                                       |
 | **6**   | *CLI Wiring & Verbose Flag*     | Connect modules in `main.py`; add `--verbose` option; integrate error handling.              |
@@ -70,19 +70,30 @@ Below is a **two-tier implementation roadmap**:
 3. Add docstring with API reference.
 4. Commit: “Working Serper search module.”
 
-### **Chunk 3 – RAG Skeleton**
+### **Chunk 3 – RAG Skeleton (Langchain Implementation)**
 
-1. Add `chromadb`, `openai`, `tiktoken` to requirements.
+1. Add `langchain`, `langchain-community`, `langchain-openai`, `langchain-chroma`, `unstructured`, `requests`, `beautifulsoup4` to requirements.
 2. In `rag.py`:
-
-   * On first call:
-
-     * Check `RAG_DOC_PATH`; if absent → log notice, return empty string.
-     * If present → load or create Chroma DB in `.rag_store/`.
-   * Provide `query_vector_store(query)` returning a single text blob (top match summaries).
-   * If `OPENAI_API_KEY` missing and docs exist → issue warning, disable RAG (prevents embedding/query errors).
-3. Add `embed_corpus(directory)` helper (called automatically on first run).
-4. Commit: “RAG stub with Chroma+OpenAI embeddings (graceful fallback).”
+   * Implement `_initialize_rag()`:
+     * Check `RAG_DOC_PATH` and `OPENAI_API_KEY`.
+     * Initialize `OpenAIEmbeddings`.
+     * Check if persistent Chroma store exists at `.rag_store/`.
+     * If exists: Load using `Chroma(persist_directory=..., embedding_function=...)`.
+     * If not exists:
+       * Use `DirectoryLoader` with `TextLoader`/`UnstructuredMarkdownLoader` for initial load from `RAG_DOC_PATH`.
+       * Implement link-following loop (using helpers from `rag_utils`):
+           * Load linked local documents up to `max_depth` from config.
+           * **NEW:** If `rag_follow_external_links` is true in config, attempt to fetch content from external web links using `requests` and parse text using `BeautifulSoup`. Add fetched content as `Document` objects. Track visited URLs.
+       * Use `SemanticChunker` to split all collected documents (local and fetched web content).
+       * Create store using `Chroma.from_documents(..., persist_directory=...)`.
+   * Implement `query_vector_store(query)`:
+     * Ensure RAG is initialized.
+     * Get retriever using `vector_store.as_retriever()`.
+     * `retriever.invoke(query)` to get relevant `Document` objects.
+     * Extract page content for context string and 'source' metadata for source paths.
+     * Return `(context_string, source_paths)`.
+3. Create `agent/rag_utils/ingestion.py` with `extract_links`, `is_web_link`, `resolve_link`.
+4. Commit: “Refactor RAG to use Langchain Indexing API with internal and optional external link following.”
 
 ### **Chunk 4 – Reasoning + Synthesis**
 

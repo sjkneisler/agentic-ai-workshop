@@ -30,7 +30,9 @@ Create a runnable Python project demonstrating a recursive research agent pipeli
 │   ├── clarifier.py                # clarify_question()
 │   ├── planner.py                  # plan_steps()
 │   ├── search.py                   # serper_search()
-│   ├── rag.py                      # query_vector_store()
+│   ├── rag.py                      # query_vector_store() (Uses Langchain)
+│   ├── rag_utils/                  # RAG utilities - NEW
+│   │   └── ingestion.py            # Link parsing/resolution - NEW
 │   ├── reasoner.py                 # reason_over_sources()
 │   └── synthesizer.py              # synthesize_answer()
 └── tests/
@@ -56,10 +58,10 @@ RAG_DOC_PATH=./my_docs    # optional user-supplied local document directory
 2. Clarify input → `clarifier.py`
 3. Plan next steps → `planner.py` → returns e.g. `["search", "rag"]`
 4. Search results → `search.py` (Serper API, mocked in tests)
-5. Optional RAG → `rag.py` (Chroma vector search over `RAG_DOC_PATH`)
+5. Optional RAG → `rag.py` (Uses Langchain: Loaders, SemanticChunker, OpenAIEmbeddings, Chroma; includes internal link following and optional external web link fetching controlled by `config.yaml`)
 6. Reason over sources → `reasoner.py`
 7. Synthesize answer → `synthesizer.py` (using settings from `config.yaml`)
-8. Print final answer. Output detail controlled by `--quiet`, default, or `--verbose` flags. Default shows source URLs.
+8. Print final answer. Output detail controlled by `--quiet`, default, or `--verbose` flags. Default shows web and local source paths.
 
 ---
 

@@ -95,13 +95,18 @@ def main():
 
     try:
         # Pass the verbosity level to the agent runner
-        # run_agent will now return (final_answer, source_urls)
-        final_answer, source_urls = agent.run_agent(question, verbosity_level=args.verbosity_level)
+        # run_agent now returns (final_answer, web_source_urls, rag_source_paths)
+        final_answer, web_source_urls, rag_source_paths = agent.run_agent(question, verbosity_level=args.verbosity_level)
 
-        # --- Print Source URLs (Default & Verbose only) ---
-        if args.verbosity_level >= 1 and source_urls:
-             url_list_str = "\n".join([f"- {url}" for url in source_urls])
-             (rich_print(Panel(url_list_str, title="Sources Used (URLs)", border_style="yellow", title_align="left")) if RICH_AVAILABLE else print(f"\n--- Sources Used (URLs) ---\n{url_list_str}"))
+        # --- Print Web Source URLs (Default & Verbose only) ---
+        if args.verbosity_level >= 1 and web_source_urls:
+             url_list_str = "\n".join([f"- {url}" for url in web_source_urls])
+             (rich_print(Panel(url_list_str, title="Sources Used (Web URLs)", border_style="yellow", title_align="left")) if RICH_AVAILABLE else print(f"\n--- Sources Used (Web URLs) ---\n{url_list_str}"))
+
+        # --- Print RAG Source Documents (Default & Verbose only) ---
+        if args.verbosity_level >= 1 and rag_source_paths:
+             rag_list_str = "\n".join([f"- {path}" for path in rag_source_paths])
+             (rich_print(Panel(rag_list_str, title="Sources Used (Local Documents)", border_style="magenta", title_align="left")) if RICH_AVAILABLE else print(f"\n--- Sources Used (Local Documents) ---\n{rag_list_str}"))
 
         # --- Print Final Answer Panel (All modes) ---
         (rich_print(Panel(final_answer, title="Final Answer", border_style="green", title_align="left")) if RICH_AVAILABLE else print(f"\n--- Final Answer ---\n{final_answer}"))
