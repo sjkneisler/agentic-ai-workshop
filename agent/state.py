@@ -37,3 +37,4 @@ class AgentState(TypedDict):
     current_query: Optional[str]
     url_to_fetch: Optional[str]
     retrieved_chunks: List[Dict[str, Any]] # Chunks retrieved by retrieve node
+    query_for_retrieval: Optional[str] # Query used for search that led to a fetch, preserved for retrieval

@@ -138,26 +138,69 @@ def chunk_and_embed_node(state: AgentState) -> Dict[str, Any]:
             if is_verbose: print_verbose(f"Error splitting text for {url}: {e}", style="red")
 
 
-    # 4. Add all collected chunks to the vector store
+    # 4. Add all collected chunks to the vector store IN BATCHES
     if all_chunks_to_add:
-        if is_verbose: print_verbose(f"Adding {len(all_chunks_to_add)} chunks to session vector store...", style="dim blue")
-        try:
-            # Use add_documents for batch efficiency
-            vector_store.add_documents(all_chunks_to_add)
-            if is_verbose: print_verbose("Successfully added chunks to vector store.", style="green")
-        except Exception as e:
-            error_msg = f"Failed to add documents to session vector store: {e}"
-            warnings.warn(error_msg)
-            if is_verbose: print_verbose(error_msg, style="bold red")
-            # Decide if this is a fatal error for the node
-            return {"error": error_msg, "session_vector_store": vector_store} # Return store even if add failed partially?
+        max_tokens_per_batch = 250000 # Stay safely below the 300k limit
+        current_batch: List[Document] = []
+        current_batch_tokens = 0
+        total_added_count = 0
 
-    # 5. Update state: Store the vector_store, clear fetched_docs
+        if is_verbose: print_verbose(f"Preparing to add {len(all_chunks_to_add)} chunks in batches (max ~{max_tokens_per_batch} tokens/batch)...", style="dim blue")
+
+        for i, chunk_doc in enumerate(all_chunks_to_add):
+            # Estimate tokens for the current chunk
+            try:
+                # Use the imported count_tokens utility
+                chunk_tokens = count_tokens(chunk_doc.page_content)
+            except Exception:
+                chunk_tokens = len(chunk_doc.page_content) // 3 # Rough fallback estimate
+
+            # Check if adding this chunk exceeds the batch limit
+            if current_batch and (current_batch_tokens + chunk_tokens > max_tokens_per_batch):
+                # Process the current batch before adding the new chunk
+                if is_verbose: print_verbose(f"  Adding batch of {len(current_batch)} chunks ({current_batch_tokens} tokens)...", style="dim blue")
+                try:
+                    vector_store.add_documents(current_batch)
+                    total_added_count += len(current_batch)
+                    if is_verbose: print_verbose(f"  Batch added successfully. Total added: {total_added_count}", style="green")
+                except Exception as e:
+                    error_msg = f"Failed to add batch ({len(current_batch)} docs) to session vector store: {e}"
+                    warnings.warn(error_msg)
+                    if is_verbose: print_verbose(f"  Error adding batch: {e}", style="bold red")
+                    # Optionally return error here, or just warn and continue? Let's warn and continue for now.
+                    # return {"error": error_msg, "session_vector_store": vector_store}
+
+                # Start a new batch
+                current_batch = [chunk_doc]
+                current_batch_tokens = chunk_tokens
+            else:
+                # Add chunk to the current batch
+                current_batch.append(chunk_doc)
+                current_batch_tokens += chunk_tokens
+
+            # Process the last batch if this is the final chunk
+            if i == len(all_chunks_to_add) - 1 and current_batch:
+                 if is_verbose: print_verbose(f"  Adding final batch of {len(current_batch)} chunks ({current_batch_tokens} tokens)...", style="dim blue")
+                 try:
+                     vector_store.add_documents(current_batch)
+                     total_added_count += len(current_batch)
+                     if is_verbose: print_verbose(f"  Final batch added successfully. Total added: {total_added_count}", style="green")
+                 except Exception as e:
+                     error_msg = f"Failed to add final batch ({len(current_batch)} docs) to session vector store: {e}"
+                     warnings.warn(error_msg)
+                     if is_verbose: print_verbose(f"  Error adding final batch: {e}", style="bold red")
+                     # Optionally return error here
+                     # return {"error": error_msg, "session_vector_store": vector_store}
+
+        # Original error handling block removed as batching handles errors internally now.
+
+    # 5. Update state: Store the vector_store, clear fetched_docs, PRESERVE query_for_retrieval
     # Note: We modify the store in place, but need to ensure the state dict reflects it.
     # Clear fetched_docs as they have been processed.
     return {
         "session_vector_store": vector_store,
         "fetched_docs": [], # Clear the processed docs
+        "query_for_retrieval": state.get("query_for_retrieval"), # Preserve the retrieval query
         "error": None
     }
 

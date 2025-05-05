@@ -29,8 +29,27 @@ from .nodes.consolidate import consolidate_notes_node # Consolidates notes befor
 
 # --- Shared Utilities Import ---
 from .utils import print_verbose, RICH_AVAILABLE, console # Import shared logging
+from .state import AgentState # Import AgentState from the correct file for type hint
 
 # --- Define Conditional Edges & Error Handler ---
+
+# Helper function for debugging the route after chunk/embed
+def route_after_chunk_embed(state: AgentState) -> str:
+    is_verbose = state.get('verbosity_level', 1) == 2
+    error = state.get("error")
+    retrieval_query = state.get("query_for_retrieval") # Check the correct state variable
+    if is_verbose:
+        print_verbose(f"Routing after chunk_embed. Error: {error}, Query for Retrieval: '{retrieval_query}'", style="cyan")
+    if not error and retrieval_query: # Check if we have a query to use for retrieval
+        if is_verbose: print_verbose(" -> Routing to retrieve_relevant_chunks_node", style="cyan")
+        return "retrieve_relevant_chunks_node"
+    elif not error:
+        # If no retrieval query, go back to reasoner to decide next step
+        if is_verbose: print_verbose(" -> Routing back to reason_node (no query for retrieval)", style="cyan")
+        return "reason_node"
+    else:
+        if is_verbose: print_verbose(" -> Routing to error_handler", style="cyan")
+        return "error_handler"
 
 def error_handler_node(state: AgentState) -> Dict[str, Any]:
     """Handles errors encountered in the graph."""
@@ -134,11 +153,15 @@ workflow.add_conditional_edges(
     {"chunk_and_embed_node": "chunk_and_embed_node", "error_handler": "error_handler"}
 )
 
-# After Chunk/Embed -> Go back to Reasoning
+# After Chunk/Embed -> Go to Retrieve Relevant Chunks
 workflow.add_conditional_edges(
     "chunk_and_embed_node",
-    lambda state: "reason_node" if not state.get("error") else "error_handler",
-    {"reason_node": "reason_node", "error_handler": "error_handler"}
+    route_after_chunk_embed, # Use the debugging function instead of lambda
+    {
+        "retrieve_relevant_chunks_node": "retrieve_relevant_chunks_node",
+        "reason_node": "reason_node",
+        "error_handler": "error_handler"
+    }
 )
 
 # After Retrieve Chunks -> Go to Summarize

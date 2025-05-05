@@ -41,6 +41,7 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
     notes = state.get('notes', [])
     search_results = state.get('search_results', []) # Needed to decide if FETCH is possible
     current_iteration = state.get('current_iteration', 0) # Default to 0 if not set
+    seen_queries = state.get('seen_queries', set()) # Read seen queries
     reasoner_config = get_reasoner_config()
     max_iterations = reasoner_config.get('max_iterations', 5) # Max reasoning cycles
 
@@ -70,6 +71,8 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
     else:
          formatted_search = "No recent search results available to fetch from."
 
+    formatted_seen_queries = "\n".join(f"- '{q}'" for q in seen_queries) if seen_queries else "No queries attempted yet."
+
     # --- Define Prompt for Decision Making ---
     # This prompt needs careful crafting and testing.
     system_prompt = reasoner_config.get('system_prompt', """
@@ -87,6 +90,9 @@ Possible Next Actions:
 
 Current Iteration: {iteration}/{max_iterations}
 
+Previously Attempted Queries (Avoid these):
+{seen_queries}
+
 Provide your decision in the following format ONLY:
 Action: [SEARCH|FETCH|RETRIEVE_CHUNKS|CONSOLIDATE|STOP]
 Argument: [Your search query | URL to fetch | Your vector store query | None]
@@ -103,6 +109,9 @@ Notes Gathered So Far:
 
 {formatted_search}
 
+Previously Attempted Queries:
+{formatted_seen_queries}
+
 Based on the current state (Iteration {current_iteration+1}/{max_iterations}), what is the single best next action to take? Ensure the action and argument directly help fulfill the Research Plan Outline. Format your response clearly as 'Action: [ACTION]' and 'Argument: [ARGUMENT]'. If the action doesn't require an argument, use 'Argument: None'.
 """
 
@@ -111,8 +120,8 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
 
     try:
         messages = [
-            SystemMessage(content=system_prompt.format(iteration=current_iteration+1, max_iterations=max_iterations)),
-            HumanMessage(content=user_prompt),
+            SystemMessage(content=system_prompt.format(iteration=current_iteration+1, max_iterations=max_iterations, seen_queries=formatted_seen_queries)),
+            HumanMessage(content=user_prompt.format(formatted_seen_queries=formatted_seen_queries)), # Pass seen queries to user prompt format too
         ]
         response = reasoner_llm.invoke(messages)
         decision_text = response.content if hasattr(response, 'content') else str(response)
@@ -168,26 +177,41 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
         # --- Update State based on Decision ---
         # Always update iteration count and the decided next action
         update_dict = {"next_action": action, "current_iteration": current_iteration + 1}
+        # Preserve query_for_retrieval by default unless explicitly changed
+        update_dict["query_for_retrieval"] = state.get("query_for_retrieval")
 
         # Set specific fields based on the action
         if action == "SEARCH":
             update_dict["current_query"] = argument
+            update_dict["query_for_retrieval"] = argument # Set this query as the one to use for potential retrieval later
+            # Add the new query to the set of seen queries
+            updated_seen_queries = seen_queries.copy()
+            updated_seen_queries.add(argument)
+            update_dict["seen_queries"] = updated_seen_queries
             update_dict["search_results"] = [] # Clear old search results before new search
             update_dict["url_to_fetch"] = None
         elif action == "FETCH":
             update_dict["url_to_fetch"] = argument
             # Keep search_results until after fetch? Or clear now? Let's clear.
             update_dict["search_results"] = []
+            # Clear current_query as it's not relevant for the FETCH step itself
             update_dict["current_query"] = None
+            # query_for_retrieval is already preserved from input state by default setting above
         elif action == "RETRIEVE_CHUNKS":
+            # Set current_query for the retrieval node, but don't change query_for_retrieval
             update_dict["current_query"] = argument
-            update_dict["search_results"] = [] # Clear search results if retrieving
+            update_dict["search_results"] = []
             update_dict["url_to_fetch"] = None
         elif action in ["CONSOLIDATE", "STOP"]:
             # Clear potentially lingering action-specific fields
             update_dict["current_query"] = None
             update_dict["url_to_fetch"] = None
             update_dict["search_results"] = []
+            update_dict["query_for_retrieval"] = None # Clear retrieval query when stopping/consolidating
+
+        # Ensure seen_queries is passed through if not updated by SEARCH
+        if "seen_queries" not in update_dict:
+             update_dict["seen_queries"] = seen_queries
 
         # ADDED LOGGING:
         if is_verbose:
@@ -202,6 +226,7 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
         # Stop on error, include error message in state
         return {"error": error_msg, "next_action": "STOP", "current_iteration": current_iteration + 1}
 
-# Need to add 'current_iteration' to AgentState (if not already done)
-# Need to add reasoner config section to config.yaml and load in config.py
-# Need to add get_reasoner_config to config.py
+# Comments moved inside the function or removed if obsolete
+# Need to add 'current_iteration' to AgentState (if not already done) - This should be done in agent/state.py
+# Need to add reasoner config section to config.yaml and load in config.py - This should be done in config.yaml and agent/config.py
+# Need to add get_reasoner_config to config.py - This should be done in agent/config.py

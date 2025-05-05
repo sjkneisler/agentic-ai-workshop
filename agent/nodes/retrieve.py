@@ -32,7 +32,7 @@ def retrieve_relevant_chunks_node(state: AgentState) -> Dict[str, Any]:
     if is_verbose: print_verbose("Entering Retrieve Relevant Chunks Node", style="magenta")
 
     vector_store: VectorStore = state.get('session_vector_store')
-    query: str = state.get('current_query') # Expect the reasoner node to set this
+    query: str = state.get('query_for_retrieval') # Use the query preserved for retrieval
 
     if not vector_store:
         if is_verbose: print_verbose("Session vector store not initialized. Cannot retrieve.", style="yellow")
@@ -40,13 +40,13 @@ def retrieve_relevant_chunks_node(state: AgentState) -> Dict[str, Any]:
         return {"retrieved_chunks": []}
 
     if not query:
-        if is_verbose: print_verbose("No query provided for retrieval.", style="yellow")
-        return {"retrieved_chunks": [], "error": "No query provided for retrieval node."} # Signal error
+        if is_verbose: print_verbose("No query_for_retrieval found in state.", style="yellow")
+        return {"retrieved_chunks": [], "error": "No query_for_retrieval found for retrieval node."} # Signal error
 
     retriever_config = get_retriever_config()
     k = retriever_config.get('k', 6) # Number of chunks to retrieve
 
-    if is_verbose: print_verbose(f"Retrieving top {k} chunks for query: '{query}'", style="dim blue")
+    if is_verbose: print_verbose(f"Retrieving top {k} chunks using query_for_retrieval: '{query}'", style="dim blue")
 
     try:
         # Option 1: Use the vector store's built-in similarity search
@@ -66,9 +66,10 @@ def retrieve_relevant_chunks_node(state: AgentState) -> Dict[str, Any]:
             #     print_verbose(f"  Chunk {i+1}: {chunk.metadata.get('url')} (Score: ??)", style="dim") # Score might not be available
 
         # Store retrieved chunks for the summarizer node
+        # Preserve query_for_retrieval in case it's needed again (unlikely but safe)
         return {
             "retrieved_chunks": retrieved_chunks,
-            "current_query": None, # Clear the query after use
+            "query_for_retrieval": query, # Pass it along
             "error": None
         }
 
