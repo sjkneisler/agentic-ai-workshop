@@ -44,7 +44,7 @@ Below is a **two-tier implementation roadmap** reflecting the current agent arch
 6.  **Synthesizer Update:** Modify `agent/synthesizer.py` (`synthesize_node`) prompt to preserve detailed citations; add post-processing regex logic for reference list generation.
 7.  **Config Update:** Add default sections and getters for `embedding`, `summarizer`, `retriever`, `consolidator` to `agent/config.py`. Update `reasoner` and `synthesizer` prompts/defaults. Ensure `config.yaml` can override these.
 8.  **File Organization:** Move `clarifier.py`, `reasoner.py`, `synthesizer.py` to `agent/nodes/`. Remove old `search_node` from `agent/search.py`.
-9.  **Graph Wiring:** Rewrite `agent/__init__.py` to import all nodes, define `route_after_reasoning` conditional logic, and connect the full graph flow (Clarify -> Reason -> [Search | Fetch -> Embed | Retrieve -> Summarize] -> Consolidate -> Synthesize -> END). Update initial state in `run_agent`.
+9.  **Graph Wiring:** Rewrite `agent/__init__.py` to import all nodes, define conditional routing logic (`route_after_reasoning`, `route_after_chunk_embed`), and connect the full graph flow (Clarify -> Reason -> [Search | Fetch -> Embed -> Retrieve -> Summarize] -> Reason -> ... -> Consolidate -> Synthesize -> END). Update initial state in `run_agent`.
 10. **Commit:** "Implement deep research loop architecture."
 
 ### **Chunk 9 – Local Tests** (⏳)

@@ -82,11 +82,11 @@ RAG_DOC_PATH=./my_docs    # optional, currently unused by main loop
     *   **Edge:** `clarify_node` -> `reason_node`.
     *   **Node:** `reason_node` (`agent/nodes/reasoner.py`) - The core decision loop. Uses an LLM to analyze state (question, outline, notes, iteration) and decides the `next_action` (SEARCH, FETCH, RETRIEVE_CHUNKS, CONSOLIDATE, STOP). Sets `current_query` or `url_to_fetch` if needed. Increments `current_iteration`.
     *   **Conditional Edges from `reason_node`:** Routes to the node corresponding to `next_action`.
-        *   `-> search_node` (`agent/nodes/search.py`): Executes web search using `serper_search` based on `current_query`. Updates `search_results`. -> `reason_node`.
-        *   `-> fetch_node` (`agent/nodes/fetch.py`): Fetches content from `url_to_fetch` using `fetch_url` tool. Updates `fetched_docs`. -> `chunk_and_embed_node`.
-        *   `-> retrieve_relevant_chunks_node` (`agent/nodes/retrieve.py`): Queries `session_vector_store` based on `current_query`. Updates `retrieved_chunks`. -> `summarize_chunks_node`.
+        *   `-> search_node` (`agent/nodes/search.py`): Executes web search using `serper_search` based on `current_query`. Updates `search_results` and `query_for_retrieval`. -> `reason_node`.
+        *   `-> fetch_node` (`agent/nodes/fetch.py`): Fetches content from `url_to_fetch` using `fetch_url` tool. Updates `fetched_docs` and `seen_urls`. -> `chunk_and_embed_node`.
+        *   `-> retrieve_relevant_chunks_node` (`agent/nodes/retrieve.py`): Queries `session_vector_store` based on `query_for_retrieval`. Updates `retrieved_chunks`. -> `summarize_chunks_node`.
         *   `-> consolidate_notes_node` (`agent/nodes/consolidate.py`): If reasoner decides CONSOLIDATE or STOP. Re-ranks `notes` using cross-encoder. Updates `combined_context` with curated notes. -> `synthesize_node`.
-    *   **Node:** `chunk_and_embed_node` (`agent/nodes/chunk_embed.py`): Takes `fetched_docs`, chunks/embeds content, adds to `session_vector_store`. Clears `fetched_docs`. -> `reason_node`.
+    *   **Node:** `chunk_and_embed_node` (`agent/nodes/chunk_embed.py`): Takes `fetched_docs`, chunks/embeds content, adds to `session_vector_store`. Clears `fetched_docs`, preserves `query_for_retrieval`. -> `retrieve_relevant_chunks_node` (if query exists).
     *   **Node:** `summarize_chunks_node` (`agent/nodes/summarize.py`): Takes `retrieved_chunks`, uses small LLM to generate a note with detailed embedded citations. Appends to `notes`. Clears `retrieved_chunks`. -> `reason_node`.
     *   **Node:** `synthesize_node` (`agent/nodes/synthesizer.py`): Takes `combined_context` (curated notes), generates final answer using LLM, preserving detailed citations. Performs post-processing to create numbered reference list. Updates `final_answer`. -> `END`.
     *   **Error Handling:** Any node can route to `error_handler` on failure. -> `END`.

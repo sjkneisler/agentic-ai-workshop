@@ -42,6 +42,7 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
     search_results = state.get('search_results', []) # Needed to decide if FETCH is possible
     current_iteration = state.get('current_iteration', 0) # Default to 0 if not set
     seen_queries = state.get('seen_queries', set()) # Read seen queries
+    seen_urls = state.get('seen_urls', set()) # Read seen URLs
     reasoner_config = get_reasoner_config()
     max_iterations = reasoner_config.get('max_iterations', 5) # Max reasoning cycles
 
@@ -66,12 +67,19 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
     formatted_notes = "\n".join(f"- {note}" for note in notes) if notes else "No notes gathered yet."
     formatted_search = ""
     if search_results:
-         url_list = "\n".join(f"  - [{i+1}] {res.get('title', 'N/A')} ({res.get('link', 'N/A')})" for i, res in enumerate(search_results))
+         # Mark seen URLs in the list presented to the LLM
+         url_list_items = []
+         for i, res in enumerate(search_results):
+             url = res.get('link', 'N/A')
+             seen_marker = " (Already Fetched)" if url in seen_urls else ""
+             url_list_items.append(f"  - [{i+1}] {res.get('title', 'N/A')} ({url}){seen_marker}")
+         url_list = "\n".join(url_list_items)
          formatted_search = f"Recent Search Results (potential URLs to fetch):\n{url_list}"
     else:
          formatted_search = "No recent search results available to fetch from."
 
-    formatted_seen_queries = "\n".join(f"- '{q}'" for q in seen_queries) if seen_queries else "No queries attempted yet."
+    formatted_seen_queries = "\n".join(f"- '{q}'" for q in seen_queries) if seen_queries else "None"
+    formatted_seen_urls = "\n".join(f"- {url}" for url in seen_urls) if seen_urls else "None"
 
     # --- Define Prompt for Decision Making ---
     # This prompt needs careful crafting and testing.
@@ -82,16 +90,19 @@ Analyze the User's Question, the Research Plan Outline, and the Notes gathered.
 Consider the Recent Search Results if deciding to fetch a URL.
 
 Possible Next Actions:
-1.  SEARCH: If more general information or starting points are needed for an outline topic. Provide a concise search query relevant to an uncovered part of the outline.
-2.  FETCH: If a specific URL from recent search results seems highly promising for an outline topic. Provide the exact URL to fetch. Only choose FETCH if search results are available.
-3.  RETRIEVE_CHUNKS: If you need to consult information already fetched and stored (e.g., to check coverage on a topic before searching again). Provide a concise query for the vector store relevant to an outline topic.
+1.  SEARCH: If more general information or starting points are needed for an outline topic, OR if the current search results only contain URLs that have already been fetched. Provide a concise search query relevant to an uncovered part of the outline. Avoid previously attempted queries listed below.
+2.  FETCH: **ONLY** if a specific URL from recent search results seems highly promising for an outline topic **AND** it is *NOT* listed under "URLs Already Fetched". Provide the exact URL to fetch. Do NOT choose FETCH if the only promising URLs have already been fetched.
+3.  RETRIEVE_CHUNKS: If you need to consult information already fetched and stored (e.g., to check coverage on a topic before searching again, or if the most relevant URLs have already been fetched and summarized). Provide a concise query for the vector store relevant to an outline topic.
 4.  CONSOLIDATE: If you believe enough information has been gathered across all outline points and notes should be prepared for the final answer. Choose this if the notes adequately cover the outline.
 5.  STOP: If the plan seems fulfilled by the notes, or if you are stuck after trying different actions.
 
 Current Iteration: {iteration}/{max_iterations}
 
-Previously Attempted Queries (Avoid these):
+Previously Attempted Queries (Avoid repeating):
 {seen_queries}
+
+URLs Already Fetched (Avoid fetching again):
+{seen_urls}
 
 Provide your decision in the following format ONLY:
 Action: [SEARCH|FETCH|RETRIEVE_CHUNKS|CONSOLIDATE|STOP]
@@ -112,6 +123,9 @@ Notes Gathered So Far:
 Previously Attempted Queries:
 {formatted_seen_queries}
 
+URLs Already Fetched:
+{formatted_seen_urls}
+
 Based on the current state (Iteration {current_iteration+1}/{max_iterations}), what is the single best next action to take? Ensure the action and argument directly help fulfill the Research Plan Outline. Format your response clearly as 'Action: [ACTION]' and 'Argument: [ARGUMENT]'. If the action doesn't require an argument, use 'Argument: None'.
 """
 
@@ -120,8 +134,16 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
 
     try:
         messages = [
-            SystemMessage(content=system_prompt.format(iteration=current_iteration+1, max_iterations=max_iterations, seen_queries=formatted_seen_queries)),
-            HumanMessage(content=user_prompt.format(formatted_seen_queries=formatted_seen_queries)), # Pass seen queries to user prompt format too
+            SystemMessage(content=system_prompt.format(
+                iteration=current_iteration+1,
+                max_iterations=max_iterations,
+                seen_queries=formatted_seen_queries,
+                seen_urls=formatted_seen_urls
+            )),
+            HumanMessage(content=user_prompt.format(
+                formatted_seen_queries=formatted_seen_queries,
+                formatted_seen_urls=formatted_seen_urls
+            )),
         ]
         response = reasoner_llm.invoke(messages)
         decision_text = response.content if hasattr(response, 'content') else str(response)
@@ -177,8 +199,9 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
         # --- Update State based on Decision ---
         # Always update iteration count and the decided next action
         update_dict = {"next_action": action, "current_iteration": current_iteration + 1}
-        # Preserve query_for_retrieval by default unless explicitly changed
+        # Preserve query_for_retrieval and seen_urls by default unless explicitly changed
         update_dict["query_for_retrieval"] = state.get("query_for_retrieval")
+        update_dict["seen_urls"] = seen_urls # Start with the input seen_urls
 
         # Set specific fields based on the action
         if action == "SEARCH":
@@ -188,30 +211,34 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
             updated_seen_queries = seen_queries.copy()
             updated_seen_queries.add(argument)
             update_dict["seen_queries"] = updated_seen_queries
-            update_dict["search_results"] = [] # Clear old search results before new search
+            # update_dict["search_results"] = [] # DON'T Clear search results here
             update_dict["url_to_fetch"] = None
         elif action == "FETCH":
             update_dict["url_to_fetch"] = argument
-            # Keep search_results until after fetch? Or clear now? Let's clear.
-            update_dict["search_results"] = []
+            # Add the fetched URL to seen_urls
+            updated_seen_urls = seen_urls.copy()
+            updated_seen_urls.add(argument)
+            update_dict["seen_urls"] = updated_seen_urls
+            # update_dict["search_results"] = [] # DON'T Clear search results here
             # Clear current_query as it's not relevant for the FETCH step itself
             update_dict["current_query"] = None
             # query_for_retrieval is already preserved from input state by default setting above
         elif action == "RETRIEVE_CHUNKS":
             # Set current_query for the retrieval node, but don't change query_for_retrieval
             update_dict["current_query"] = argument
-            update_dict["search_results"] = []
+            # update_dict["search_results"] = [] # DON'T Clear search results here
             update_dict["url_to_fetch"] = None
         elif action in ["CONSOLIDATE", "STOP"]:
             # Clear potentially lingering action-specific fields
             update_dict["current_query"] = None
             update_dict["url_to_fetch"] = None
-            update_dict["search_results"] = []
+            update_dict["search_results"] = [] # OK to clear results when consolidating/stopping
             update_dict["query_for_retrieval"] = None # Clear retrieval query when stopping/consolidating
 
-        # Ensure seen_queries is passed through if not updated by SEARCH
+        # Ensure seen_queries and seen_urls are passed through if not updated
         if "seen_queries" not in update_dict:
              update_dict["seen_queries"] = seen_queries
+        # seen_urls is already preserved by default setting above
 
         # ADDED LOGGING:
         if is_verbose:

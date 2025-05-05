@@ -2,32 +2,52 @@
 
 ## Current Work Focus
 
-The agent pipeline has undergone a major refactoring to implement a **Deep Research Loop** architecture. This replaces the previous iterative LangChain Agent-based reasoner with a more explicit, multi-node graph structure.
+The primary focus remains on verifying and refining the **Deep Research Loop** architecture. Recent testing revealed several issues requiring debugging:
 
-The current focus is on:
-- **Verification:** Testing this new Clarify -> [Reason -> Search/Fetch/Embed/Retrieve/Summarize]* -> Consolidate -> Synthesize flow. Ensuring the reasoner node makes sensible decisions and the loop progresses correctly.
-- **Refinement:** Tuning prompts (Reasoner decision, Summarizer, Synthesizer), component settings (chunk size, retriever K, consolidator top_n), and iteration limits (`config.yaml`).
-- **Citation Handling:** Verifying the accuracy and formatting of the citation post-processing in the synthesizer.
-- **Testing:** Updating `pytest` tests to reflect the new graph structure and node interactions.
+- **Repetitive Actions:** The `reason_node` initially got stuck in loops, repeatedly suggesting the same SEARCH query or FETCH URL.
+- **State Persistence:** Key pieces of state were not being correctly passed between nodes or iterations, specifically:
+    - The query used for search wasn't available for retrieval after fetching/embedding.
+    - Search results were being cleared prematurely, preventing the reasoner from considering alternative URLs from the same search.
+- **Incorrect Graph Flow:** The graph initially routed back to the `reason_node` after embedding, skipping the crucial retrieval and summarization steps.
 
-## Recent Changes (Deep Research Loop Implementation)
+Current efforts are focused on:
+- **Debugging Loop Logic:** Ensuring the `reason_node` uses state effectively (like `seen_queries`, `seen_urls`, `notes`, persistent `search_results`) to make better decisions and avoid redundant actions.
+- **Verifying State Updates:** Confirming that state variables (`query_for_retrieval`, `seen_urls`, `search_results`) are correctly updated and preserved by each node and the LangGraph framework.
+- **Testing Corrected Flow:** Running the agent to confirm the intended `Embed -> Retrieve -> Summarize -> Reasoner` flow is now executing.
+- **Refinement:** Further tuning of the `reasoner_node` prompt might be needed if suboptimal decisions persist.
+- **Testing:** Updating `pytest` tests remains a pending task.
 
-- **New Graph Structure:** Defined in `agent/__init__.py`, orchestrating a loop involving fetching, chunking, embedding, retrieving, and summarizing web content.
-- **Reasoner Refactor:** `agent/nodes/reasoner.py` (`reason_node`) no longer runs a self-contained agent. It now uses an LLM call to analyze state (question, outline, notes, iteration) and decide the `next_action` (SEARCH, FETCH, RETRIEVE_CHUNKS, CONSOLIDATE, STOP), directing the graph flow.
-- **New Nodes Added (`agent/nodes/`):**
-    - `search.py`: Executes web search based on reasoner query.
-    - `fetch.py`: Fetches URL content using the new `fetch_url` tool.
-    - `chunk_embed.py`: Chunks/embeds fetched HTML into a session vector store (in-memory Chroma).
-    - `retrieve.py`: Retrieves relevant chunks from the session store based on reasoner query.
-    - `summarize.py`: Summarizes retrieved chunks into notes with detailed embedded citations.
-    - `consolidate.py`: Re-ranks notes using a cross-encoder and prepares context for synthesis.
-- **New Tool Added (`agent/tools/`):**
-    - `fetch.py`: `fetch_url` tool using `requests-html` to get page content.
-- **State Update (`agent/state.py`):** Added fields for `session_vector_store`, `notes`, `fetched_docs`, `retrieved_chunks`, `current_iteration`, `next_action`, `current_query`, `url_to_fetch`.
-- **Synthesizer Update (`agent/nodes/synthesizer.py`):** Modified prompts to preserve detailed citations; added post-processing step to create a numbered reference list.
-- **Configuration Update (`agent/config.py`):** Added default configs and getters for `embedding`, `summarizer`, `retriever`, `consolidator`. Updated `reasoner` and `synthesizer` defaults/prompts.
-- **Dependencies Update (`requirements.txt`):** Added `requests-html`, `lxml[html_clean]`, `sentence-transformers`.
-- **File Organization:** Moved `clarifier.py`, `reasoner.py`, `synthesizer.py` into `agent/nodes/`. Removed old `search_node` from `agent/search.py`.
+## Recent Changes (Deep Research Loop Implementation & Debugging)
+
+**Initial Implementation:**
+- **New Graph Structure:** Defined in `agent/__init__.py`.
+- **Reasoner Refactor:** `agent/nodes/reasoner.py` became a decision-making LLM call.
+- **New Nodes Added:** `search`, `fetch`, `chunk_embed`, `retrieve`, `summarize`, `consolidate` nodes created in `agent/nodes/`.
+- **New Tool Added:** `fetch_url` tool in `agent/tools/fetch.py`.
+- **State Update:** Added fields to `agent/state.py` for loop control and data handling.
+- **Synthesizer Update:** Modified for citation handling.
+- **Configuration Update:** Added sections to `config.yaml` / `agent/config.py`.
+- **Dependencies Update:** Added `requests-html`, `lxml[html_clean]`, `sentence-transformers`.
+- **File Organization:** Nodes moved into `agent/nodes/`.
+
+**Debugging Fixes (This Session):**
+- **`reasoner.py`:**
+    - Added tracking of `seen_queries` to state and prompt to prevent repeating exact searches.
+    - Added tracking of `seen_urls` to state and prompt to prevent repeating exact fetches.
+    - Strengthened prompt instructions to avoid fetching seen URLs and consider alternatives.
+    - Corrected logic to stop clearing `search_results` prematurely, allowing results to persist across iterations.
+    - Introduced `query_for_retrieval` state variable to correctly pass the relevant query from SEARCH through FETCH/EMBED to RETRIEVE. Updated state update logic accordingly.
+- **`chunk_embed.py`:**
+    - Implemented batching for `vector_store.add_documents()` to handle OpenAI token limits for large pages.
+    - Corrected state update logic to preserve `query_for_retrieval` (previously tried preserving `current_query` incorrectly).
+- **`state.py`:**
+    - Added `query_for_retrieval: Optional[str]` field.
+    - Added `seen_urls: Set[str]` field.
+- **`__init__.py`:**
+    - Corrected graph flow: Added conditional edge logic (`route_after_chunk_embed`) to route from `chunk_and_embed_node` -> `retrieve_relevant_chunks_node` (using `query_for_retrieval`) instead of back to `reason_node`.
+    - Fixed `ImportError` for `AgentState`.
+- **`retrieve.py`:**
+    - Modified to use `query_for_retrieval` from state for vector store query instead of `current_query`.
 
 *(Previous changes like initial LangGraph adoption, RAG implementation, Clarifier implementation, etc., are documented below)*
 
@@ -40,38 +60,29 @@ The current focus is on:
 
 ## Next Steps
 
-1.  **Install/Update Dependencies:**
-    *   Run `python3 -m pip install -r requirements.txt` (ensure `requests-html`, `lxml[html_clean]`, `sentence-transformers` are installed).
-2.  **Configure Environment & Config:**
-    *   Ensure `.env` has valid `SERPER_API_KEY` and `OPENAI_API_KEY`.
-    *   Review/modify `config.yaml`, especially the sections for `reasoner`, `embedding`, `summarizer`, `retriever`, `consolidator`, `synthesizer`. Pay attention to model choices, prompts, and thresholds (e.g., `max_iterations`, `top_n`).
-3.  **Manual Testing (Focus on New Deep Research Loop):**
-    *   Run with verbose mode: `python3 main.py "Your question here" --verbose`
-    *   **Test Clarifier:** Verify outline generation.
-    *   **Test Research Loop:**
-        *   Observe `reason_node` decisions (`next_action`).
-        *   Check if `search_node` runs with the correct query.
-        *   Check if `fetch_node` gets the right URL.
-        *   Check if `chunk_and_embed_node` processes content and adds to the (transient) store.
-        *   Check if `retrieve_relevant_chunks_node` gets chunks based on reasoner query.
-        *   Check if `summarize_chunks_node` creates notes with correct citation format.
-        *   Verify loop continues up to `max_iterations` or until `CONSOLIDATE`/`STOP` is decided.
-    *   **Test Consolidation:** Examine `combined_context` passed to synthesizer (in verbose logs) - does it contain ranked notes?
-    *   **Test Synthesizer:** Does the final answer make sense? Are citations correctly formatted with a reference list?
-4.  **Run/Update Automated Tests:**
-    *   Execute `python3 -m pytest`. Tests will need significant updates to mock the new graph structure and node interactions.
-5.  **Address Issues:** Fix bugs identified during testing (e.g., prompt tuning, node logic errors, citation formatting).
-6.  **Consider Enhancements:** Improve HTML cleaning (`trafilatura`), add RAG integration, refine reasoner decision logic.
+1.  **Verify Current Fixes:**
+    *   Run the agent again (`python3 main.py "..." --verbose`) to confirm that:
+        *   `search_results` persist across iterations.
+        *   The agent attempts to fetch *different* URLs from the search results if the first is already seen.
+        *   The flow correctly proceeds `Embed -> Retrieve -> Summarize`.
+2.  **Refine Reasoner (If Needed):** If the agent still makes suboptimal choices (e.g., unnecessary searches when unseen URLs are available), further refine the `reasoner.py` system prompt or logic.
+3.  **Run/Update Automated Tests:**
+    *   Execute `python3 -m pytest`. Tests will need significant updates for the new architecture and state variables.
+4.  **Update README & Docs:**
+    *   Ensure README reflects the corrected flow and new state variables (`query_for_retrieval`, `seen_urls`).
+5.  **Polish Pass:**
+    *   Pin requirements, validate configs, review outputs, address TODOs.
 
 ## Active Decisions & Considerations
 
-- **Agent Architecture:** Shifted to an explicit, multi-node "Deep Research Loop" graph controlled by a central `reason_node`.
-- **Reasoner:** Now a decision-making node, not a self-contained agent executor. Uses LLM to choose next step (SEARCH, FETCH, RETRIEVE_CHUNKS, CONSOLIDATE, STOP).
-- **Content Handling:** Agent now fetches full HTML, chunks/embeds into a session store, retrieves, and summarizes before final synthesis.
-- **Vector Store:** Uses an ephemeral, in-memory Chroma store (`session_vector_store`) for each run, managed via `chunk_and_embed_node`. Persistent RAG store (`agent/rag.py`, `agent/rag_utils/`) is currently unused by the main loop.
-- **Summarization:** Happens per retrieval step, generating source-grounded notes using a smaller LLM.
-- **Consolidation:** Notes are re-ranked using a cross-encoder before final synthesis.
-- **Source Tracking:** Implemented via detailed embedded citations in notes and post-processing in the synthesizer to create a reference list.
-- **Configuration:** Added sections and getters in `config.yaml`/`agent/config.py` for new components.
-- **File Structure:** Core nodes (`clarifier`, `reasoner`, `synthesizer`) moved to `agent/nodes/`. New nodes and tools placed in `agent/nodes/` and `agent/tools/`.
-- **Testing:** Automated tests require significant updates.
+- **Agent Architecture:** Confirmed as explicit "Deep Research Loop" graph. Flow corrected to `Embed -> Retrieve -> Summarize -> Reasoner`.
+- **Reasoner:** Remains central decision-maker. Prompt strengthened to handle `seen_urls` and persistent `search_results`.
+- **State Management:**
+    - Introduced `query_for_retrieval` to pass the correct context from Search to Retrieve.
+    - Introduced `seen_urls` to prevent redundant fetches.
+    - Modified `reasoner.py` to persist `search_results` across iterations until consolidation/stop.
+- **Content Handling:** Fetch -> Chunk/Batch Embed -> Retrieve -> Summarize flow implemented. Batching added to embedding for large documents.
+- **Vector Store:** Still ephemeral in-memory Chroma per run.
+- **Summarization/Consolidation/Source Tracking:** No changes in this session.
+- **Configuration/File Structure:** No changes in this session.
+- **Testing:** Still requires significant updates.
