@@ -73,28 +73,42 @@ The current focus is on:
         3. **(Optional) External Web Fetching:** If `rag_follow_external_links` is true, extracts all `http/https` links from the content of *all* collected chunks (initial + internally linked). Fetches content using `requests`/`BeautifulSoup` on the fly.
         4. Combines context from initial chunks, internally linked chunks, and fetched web pages.
         5. Returns combined context and a list of all contributing sources (local file paths and fetched web URLs).
+- **Refactored RAG Structure:** Moved RAG initialization logic to `agent/rag_utils/rag_initializer.py` and query logic to `agent/rag_utils/rag_query.py`, updating `agent/rag.py` to be an interface.
+- **Implemented Interactive LangChain Clarifier:**
+    - Refactored `agent/clarifier.py` to use LangChain components (`ChatOpenAI`, `ChatPromptTemplate`, `JsonOutputParser`, `StrOutputParser`) instead of direct `openai` calls. Models and temperature are configurable via `config.yaml` (`clarification_model`, `refinement_model`, etc.).
+    - **Clarification Check:** A LangChain chain determines if the initial question needs clarification and suggests specific questions to ask the user (using `JsonOutputParser`).
+    - **User Interaction:** If clarification is needed, the agent prompts the user with the suggested questions directly in the terminal and waits for input.
+    - **Question Refinement:** A second LangChain chain synthesizes a refined question based on the original query and the user's answers (using `StrOutputParser`).
+    - Falls back to the original question if `OPENAI_API_KEY` is missing, LangChain components fail to initialize, user cancels, or chain invocations fail.
+    - Requires `langchain-openai`, `langchain-core` libraries and `OPENAI_API_KEY` in `.env` for clarification functionality.
 
 ## Next Steps
 
 1.  **Install/Update Dependencies:**
-    *   Run `python3 -m pip install -r requirements.txt` (to ensure `PyYAML`, `langchain`, `langchain-community`, `langchain-openai`, `langchain-chroma`, `unstructured` are installed).
+    *   Run `python3 -m pip install -r requirements.txt` (to ensure `PyYAML`, `langchain`, `langchain-community`, `langchain-openai`, `langchain-core`, `langchain-chroma`, `unstructured` are installed).
 2.  **Configure Environment & Config:**
-    *   Ensure `.env` has valid `SERPER_API_KEY` and `OPENAI_API_KEY` (now required for RAG).
+    *   Ensure `.env` has valid `SERPER_API_KEY` and `OPENAI_API_KEY` (now required for RAG *and* LangChain Clarification).
     *   Ensure `RAG_DOC_PATH` in `.env` points to a directory with `.txt` or `.md` files (including some with internal *and external* links for testing).
-    *   Review/modify `config.yaml`, especially the RAG section: `rag_initial_link_follow_depth`, `rag_follow_external_links`, `rag_follow_internal_chunk_links`, `rag_internal_link_depth`, `rag_internal_link_k`.
-3.  **Manual Testing (Focus on RAG):**
+    *   Review/modify `config.yaml`, especially the RAG section (`rag_...` settings) and the new Clarifier section (`clarification_model`, `refinement_model`, etc.).
+3.  **Manual Testing (Focus on Clarifier & RAG):**
     *   Delete the `.rag_store` directory if it exists from previous incompatible versions.
     *   Run with default/verbose mode: `python3 main.py "..."`
-    *   Verify RAG initialization messages (document loading, splitting, store creation).
-    *   Ask questions designed to trigger retrieval from specific documents and linked documents.
-    *   Check the "Sources Used (Local Documents)" panel in the output.
-    *   Check verbose output (`-v`) for details on document loading, metadata storage, initial retrieval, internal chunk traversal (if enabled), external web fetching (if enabled), and final context/sources.
-    *   Test different combinations of RAG settings in `config.yaml` (e.g., internal traversal on/off, external fetching on/off, different depths/k values).
-    *   Verify that context from internally linked chunks appears when expected.
-    *   Verify that context from external web pages appears when expected.
-    *   Verify that the "Sources Used" panel correctly lists local files and fetched URLs.
+    *   **Test Clarifier:**
+        *   Ask ambiguous questions to trigger the clarification flow.
+        *   Answer the follow-up questions in the terminal.
+        *   Verify the refined question (in verbose output) makes sense.
+        *   Test cancelling the clarification (Ctrl+C).
+        *   Test running without an `OPENAI_API_KEY` to ensure it skips clarification gracefully.
+    *   **Test RAG (as before):**
+        *   Verify RAG initialization messages.
+        *   Ask questions designed to trigger retrieval from specific documents and linked documents (using the *refined* question if clarification occurred).
+        *   Check the "Sources Used (Local Documents)" panel.
+        *   Check verbose output (`-v`) for RAG details.
+        *   Test different RAG settings in `config.yaml`.
+        *   Verify context from internal/external links appears as expected.
+        *   Verify the "Sources Used" panel lists all sources correctly.
 4.  **Run Automated Tests:**
-    *   Execute `python3 -m pytest`. Tests interacting with RAG will likely need significant updates or mocking due to the Langchain refactor.
+    *   Execute `python3 -m pytest`. Tests interacting with RAG *and Clarifier* will likely need significant updates or mocking.
 5.  **Address Issues:** Fix any bugs identified during testing.
 6.  **Consider Enhancements:** Review RAG performance, explore different Langchain splitters/loaders, or other goals.
 
@@ -109,3 +123,4 @@ The current focus is on:
     - **Indexing:** Follows internal document links up to `rag_initial_link_follow_depth`. Stores resolved target file paths from internal links as a serialized string (`internal_linked_paths_str`) in metadata on chunks (due to Chroma limitations) before saving to Chroma. Does *not* fetch external links during indexing.
     - **Retrieval:** Performs initial semantic search. Optionally traverses internal links *between chunks* by deserializing the stored `internal_linked_paths_str` metadata and performing filtered searches (controlled by `rag_follow_internal_chunk_links`, `rag_internal_link_depth`, `rag_internal_link_k`). Optionally fetches external web links found in collected chunks on the fly (controlled by `rag_follow_external_links`). Combines all context.
 - **Agent Output:** `run_agent` now returns `(final_answer, web_source_urls, rag_source_paths)`. `main.py` displays both web and local sources (including fetched web URLs and sources from internally linked chunks).
+- **Clarification:** The agent now uses an interactive LangChain-based clarification step (`agent/clarifier.py`) if an `OPENAI_API_KEY` is provided. It uses `ChatOpenAI` and structured output parsing to determine if clarification is needed, prompts the user in the terminal with suggested questions, and then refines the query using another LangChain chain. This behavior can be tuned via `config.yaml`.

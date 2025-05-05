@@ -73,34 +73,35 @@ Below is a **two-tier implementation roadmap**:
 ### **Chunk 3 – RAG Skeleton (Langchain Implementation)**
 
 1. Add `langchain`, `langchain-community`, `langchain-openai`, `langchain-chroma`, `unstructured`, `requests`, `beautifulsoup4` to requirements.
-2. In `rag.py`:
-   * Implement `_initialize_rag()`:
-     * Check `RAG_DOC_PATH` and `OPENAI_API_KEY`.
+2. Create `agent/rag_utils/rag_initializer.py`:
+   * Implement `initialize_rag()`:
+     * Manage internal state (`_vector_store`, `_rag_initialized`, `_rag_enabled`).
+     * Implement `is_rag_enabled()` and `get_vector_store()` helper functions.
+     * Perform environment variable checks (`RAG_DOC_PATH`, `OPENAI_API_KEY`).
      * Initialize `OpenAIEmbeddings`.
-     * Check if persistent Chroma store exists at `.rag_store/`.
-     * If exists: Load using `Chroma(persist_directory=..., embedding_function=...)`.
-     * If not exists (Indexing):
-        * Use `DirectoryLoader` with `TextLoader`/`UnstructuredMarkdownLoader` for initial load from `RAG_DOC_PATH`.
-        * Implement internal document link-following loop (using helpers from `rag_utils`) up to `rag_initial_link_follow_depth` from config.
-        * **NEW:** Before chunking, iterate through loaded docs, extract internal links, resolve target file paths.
-        * **FIX:** Store the list of paths as a serialized string (`internal_linked_paths_str`, joined by `;;`) in metadata for Chroma compatibility.
-        * Use `SemanticChunker` to split all collected local documents.
-        * Create store using `Chroma.from_documents(..., persist_directory=...)`, ensuring metadata (including `internal_linked_paths_str`) is preserved on chunks.
-   * Implement `query_vector_store(query)` (Retrieval):
-     * Ensure RAG is initialized.
-     * Perform initial semantic search: `retriever.invoke(query)` to get `initial_chunks`.
-     * **NEW (Optional Internal Traversal):** If `rag_follow_internal_chunk_links` is true:
-         * Perform breadth-first search starting from `initial_chunks`.
-         * Use `internal_linked_paths_str` metadata on chunks, deserialize the string back into a list of target file paths.
-         * For each target path, perform filtered similarity search: `vector_store.similarity_search(query, k=rag_internal_link_k, filter={'source': target_path})`.
-         * Collect unique linked chunks up to `rag_internal_link_depth`.
-     * **NEW (Optional External Fetching):** If `rag_follow_external_links` is true:
-         * Extract all `http/https` links from the content of *all* collected chunks (initial + linked).
-         * Fetch unique URLs using `requests`, parse with `BeautifulSoup`.
-     * Combine context from local chunks, linked chunks, and fetched web content.
-     * Extract and return unique source paths/URLs.
-3. Create `agent/rag_utils/ingestion.py` with `extract_links`, `is_web_link`, `resolve_link`.
-4. Commit: “Implement combined RAG: internal link metadata (serialized) indexing + retrieval-time chunk traversal & web fetching.”
+     * Load or create the persistent Chroma store (`.rag_store/`).
+     * **Indexing Logic (if creating store):**
+        * Use `DirectoryLoader` with `TextLoader`/`UnstructuredMarkdownLoader` for initial load.
+        * Implement internal document link-following loop (using helpers from `ingestion.py`) up to `rag_initial_link_follow_depth`.
+        * Add internal link metadata (`internal_linked_paths_str`) to documents before chunking.
+        * Use `SemanticChunker` to split documents.
+        * Create store using `Chroma.from_documents(...)` and persist.
+     * Update internal state based on success/failure.
+3. Create `agent/rag_utils/rag_query.py`:
+   * Implement `query_vector_store(query, n_results, verbose)`:
+     * Use `is_rag_enabled()` and `get_vector_store()` from `rag_initializer`.
+     * **Retrieval Logic:**
+        * Perform initial semantic search using the vector store retriever.
+        * **(Optional) Internal Chunk Traversal:** If enabled, use `internal_linked_paths_str` metadata, deserialize, perform filtered searches, collect linked chunks.
+        * **(Optional) External Web Fetching:** If enabled, extract web links from all collected chunks, fetch content using `requests`/`BeautifulSoup`.
+        * Combine context from all sources (initial chunks, linked chunks, web pages).
+        * Extract and return unique source paths/URLs.
+4. Create `agent/rag_utils/ingestion.py` (if not already present) with `extract_links`, `is_web_link`, `resolve_link`.
+5. Update `agent/rag.py` to be an interface:
+   * Import `initialize_rag`, `is_rag_enabled` from `agent.rag_utils.rag_initializer`.
+   * Import `query_vector_store` from `agent.rag_utils.rag_query`.
+   * Expose these functions using `__all__`.
+6. Commit: “Refactor RAG logic into rag_utils initializer and query modules.”
 
 ### **Chunk 4 – Reasoning + Synthesis**
 
@@ -114,12 +115,20 @@ Below is a **two-tier implementation roadmap**:
 
 ### **Chunk 5 – Planner & Clarifier**
 
-1. `clarifier.py` → echo input or re-ask clarifying Q via OpenAI if key exists.
+1. `clarifier.py` → Implement interactive LangChain clarification:
+   * Check for `OPENAI_API_KEY`. Skip if missing or LangChain components fail to initialize.
+   * Use a LangChain chain (`ChatOpenAI`, `ChatPromptTemplate`, `JsonOutputParser` with Pydantic model) to check if the question needs clarification and get specific questions to ask (model/temp from `config.yaml`).
+   * If clarification needed:
+       * Loop through questions, prompt user via `input()` in the terminal.
+       * Collect user answers.
+       * Use another LangChain chain (`ChatOpenAI`, `ChatPromptTemplate`, `StrOutputParser`) with the original question + Q&A to synthesize a refined question (model/temp from `config.yaml`).
+   * Return the refined question, or the original if clarification skipped/failed/cancelled.
+   * Add `langchain-openai`, `langchain-core` to requirements.
 2. `planner.py`:
-
-   * Rule: always `"search"`; add `"rag"` if docs exist.
+   * Rule: always `"search"`; add `"rag"` if `RAG_DOC_PATH` exists and is a directory.
+   * Use the (potentially refined) question from the clarifier (though the content isn't used for planning *yet*).
    * Return list of steps.
-3. Commit: “Simple planner + clarifier defaults.”
+3. Commit: “Implement interactive LangChain clarifier and simple planner.”
 
 ### **Chunk 6 – CLI Wiring & Verbose Flag**
 

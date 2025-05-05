@@ -8,8 +8,9 @@ This plan is for an AI coding agent (without autonomous web access) to bootstrap
 
 Create a runnable Python project demonstrating a recursive research agent pipeline:
 
-* Clarifier → Planner → Search → (Optional RAG) → Reason → Synthesize
+* Interactive Clarifier → Planner → Search → (Optional RAG) → Reason → Synthesize
 * Designed to run in CLI with Serper search and optional Chroma-based RAG
+* Includes an interactive clarification step using LangChain components and terminal input.
 * Clear modularity for agents, extendability with LangGraph or MCP
 * Low barrier to entry: one script, clearly segmented modules, `.env` driven config
 
@@ -32,7 +33,10 @@ Create a runnable Python project demonstrating a recursive research agent pipeli
 │   ├── search.py                   # serper_search()
 │   ├── rag.py                      # query_vector_store() (Uses Langchain)
 │   ├── rag_utils/                  # RAG utilities - NEW
-│   │   └── ingestion.py            # Link parsing/resolution - NEW
+│   │   ├── __init__.py             # Make it a package (optional but good practice)
+│   │   ├── ingestion.py            # Link parsing/resolution
+│   │   ├── rag_initializer.py      # RAG setup/state - NEW
+│   │   └── rag_query.py            # RAG querying - NEW
 │   ├── reasoner.py                 # reason_over_sources()
 │   └── synthesizer.py              # synthesize_answer()
 └── tests/
@@ -46,7 +50,7 @@ Create a runnable Python project demonstrating a recursive research agent pipeli
 
 ```
 SERPER_API_KEY=...        # required for real search
-OPENAI_API_KEY=...        # required only if RAG is enabled
+OPENAI_API_KEY=...        # required for RAG and/or LLM-based clarification
 RAG_DOC_PATH=./my_docs    # optional user-supplied local document directory
 ```
 
@@ -55,12 +59,12 @@ RAG_DOC_PATH=./my_docs    # optional user-supplied local document directory
 ### 🚀 Agent Flow (main.py)
 
 1. Prompt user: `input("🔍 Question: ")`
-2. Clarify input → `clarifier.py`
-3. Plan next steps → `planner.py` → returns e.g. `["search", "rag"]`
-4. Search results → `search.py` (Serper API, mocked in tests)
-5. Optional RAG → `rag.py` (Indexes local docs, storing internal link paths as serialized string in metadata for Chroma compatibility. Retrieves via semantic search, optionally traverses internal chunk links using deserialized metadata, optionally fetches external web links found in context. All controlled by `config.yaml`)
-6. Reason over sources → `reasoner.py`
-7. Synthesize answer → `synthesizer.py` (using settings from `config.yaml`)
+2. Clarify input → `clarifier.py` (Uses LangChain; may interactively prompt user for more info if needed and `OPENAI_API_KEY` is set). Returns original or refined question.
+3. Plan next steps → `planner.py` (Uses the clarified/refined question) → returns e.g. `["search", "rag"]`
+4. Search results → `search.py` (Uses the clarified/refined question; Serper API, mocked in tests)
+5. Optional RAG → `rag.py` (Uses the clarified/refined question. Indexes local docs, storing internal link paths as serialized string in metadata for Chroma compatibility. Retrieves via semantic search, optionally traverses internal chunk links using deserialized metadata, optionally fetches external web links found in context. All controlled by `config.yaml`)
+6. Reason over sources → `reasoner.py` (Uses search results and RAG context)
+7. Synthesize answer → `synthesizer.py` (Uses the clarified/refined question and combined context; uses settings from `config.yaml`)
 8. Print final answer. Output detail controlled by `--quiet`, default, or `--verbose` flags. Default shows web and local source paths.
 
 ---

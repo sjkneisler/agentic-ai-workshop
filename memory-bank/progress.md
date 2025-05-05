@@ -63,9 +63,9 @@ Thought for a couple of seconds
 
 #### ✅ Chunk 5 – Planner & Clarifier
 
-* ✅ `clarifier.clarify_question()` (identity or OpenAI re-ask)
-* ✅ `planner.plan_steps()` rule: always `"search"`; add `"rag"` if docs exist
-* ✅ Commit: **“Simple planner + clarifier defaults”**
+* ✅ `clarifier.clarify_question()` (Implemented interactive LangChain clarification: check -> prompt user -> refine)
+* ✅ `planner.plan_steps()` rule: always `"search"`; add `"rag"` if docs exist (uses refined question)
+* ✅ Commit: **“Implement interactive LangChain clarifier and simple planner”**
 
 ---
 
@@ -133,3 +133,5 @@ Thought for a couple of seconds
 * ✅ Modified RAG indexing to store internal link target paths as a serialized string (`internal_linked_paths_str`) in chunk metadata (for Chroma compatibility).
 * ✅ Implemented RAG retrieval-time internal chunk link traversal (deserializing metadata string, configurable via `config.yaml`).
 * ✅ Implemented RAG retrieval-time external web link fetching (configurable via `config.yaml`).
+* ✅ Refactored RAG logic into `agent/rag_utils/rag_initializer.py` and `agent/rag_utils/rag_query.py`.
+* ✅ Implemented interactive LangChain-based question clarification in `agent/clarifier.py` (uses `ChatOpenAI`, prompts user in terminal).
