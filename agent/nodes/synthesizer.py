@@ -93,7 +93,7 @@ def _post_process_citations(text: str, verbose: bool = False) -> str:
 
 # --- Main Synthesis Function ---
 
-def synthesize_answer(question: str, context: str, verbose: bool = False) -> str:
+def synthesize_answer(question: str, context: str, outline: str, verbose: bool = False) -> str:
     """
     Synthesizes the final answer based on the provided curated context (notes).
     Instructs the LLM to preserve detailed citations, then post-processes them.
@@ -108,8 +108,8 @@ def synthesize_answer(question: str, context: str, verbose: bool = False) -> str
     llm = initialize_llm(
         model_config_key='model',
         temp_config_key='temperature',
-        default_model=synth_config.get('model', 'gpt-4o-mini'), # Use a capable model for final synthesis
-        default_temp=synth_config.get('temperature', 0.7)
+        default_model=synth_config.get('model', 'o4-mini'), # Use a capable model for final synthesis
+        default_temp=synth_config.get('temperature', 1)
     )
 
     if llm and LANGCHAIN_CORE_AVAILABLE:
@@ -124,7 +124,7 @@ You are a research assistant. Synthesize a comprehensive and well-structured ans
 Structure your answer clearly. Do not invent facts or information not present in the notes.
 """).strip()
             # Context now comes from the consolidator node
-            user_prompt = f"User Question: {question}\n\nCurated Research Notes:\n{context}"
+            user_prompt = f"User Question: {question}\n\nAnswer Outline:\n{outline}\n\nCurated Research Notes:\n{context}"
 
             # Estimate tokens (optional)
             # prompt_tokens = count_tokens(system_prompt + user_prompt, model=model_name)
@@ -180,6 +180,7 @@ def synthesize_node(state: AgentState) -> Dict[str, Any]:
         answer = synthesize_answer(
             state['clarified_question'],
             state['combined_context'], # This now contains curated notes from consolidator
+            state['plan_outline'],
             verbose=is_verbose
         )
         # Verbose printing is handled within synthesize_answer and _post_process_citations

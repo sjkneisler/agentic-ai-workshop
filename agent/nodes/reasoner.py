@@ -55,8 +55,8 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
     reasoner_llm = initialize_llm(
         model_config_key='reasoner_model', # Key within reasoner config section
         temp_config_key='reasoner_temperature',
-        default_model='gpt-4o-mini', # Use a capable model for reasoning
-        default_temp=0.1 # Low temp for deterministic decision making
+        default_model='o4-mini', # Use a capable model for reasoning
+        default_temp=1 # Low temp for deterministic decision making
     )
     if not reasoner_llm:
         error_msg = "Failed to initialize LLM for Reasoner Node."
@@ -90,11 +90,15 @@ Analyze the User's Question, the Research Plan Outline, and the Notes gathered.
 Consider the Recent Search Results if deciding to fetch a URL.
 
 Possible Next Actions:
-1.  SEARCH: If more general information or starting points are needed for an outline topic, OR if the current search results only contain URLs that have already been fetched. Provide a concise search query relevant to an uncovered part of the outline. Avoid previously attempted queries listed below.
-2.  FETCH: **ONLY** if a specific URL from recent search results seems highly promising for an outline topic **AND** it is *NOT* listed under "URLs Already Fetched". Provide the exact URL to fetch. Do NOT choose FETCH if the only promising URLs have already been fetched.
-3.  RETRIEVE_CHUNKS: If you need to consult information already fetched and stored (e.g., to check coverage on a topic before searching again, or if the most relevant URLs have already been fetched and summarized). Provide a concise query for the vector store relevant to an outline topic.
-4.  CONSOLIDATE: If you believe enough information has been gathered across all outline points and notes should be prepared for the final answer. Choose this if the notes adequately cover the outline.
-5.  STOP: If the plan seems fulfilled by the notes, or if you are stuck after trying different actions.
+1.  FETCH: If there is at least one URL in 'Recent Search Results' that is **NOT** listed under 'URLs Already Fetched' AND you deem it highly promising for a topic in the 'Research Plan Outline'. Prioritize this over SEARCH. Provide the exact URL to fetch. If multiple unvisited URLs are promising, pick the one you believe is most relevant.
+2.  RETRIEVE_CHUNKS: If you need to consult information already fetched and stored (e.g., to check coverage on a topic before searching again, or if the most relevant URLs have already been fetched and summarized). Provide a concise query for the vector store relevant to an outline topic.
+3.  CONSOLIDATE: If you believe enough information has been gathered across all outline points and notes should be prepared for the final answer. Choose this if the notes adequately cover the outline.
+4.  STOP: If the plan seems fulfilled by the notes, or if you are stuck after trying different actions.
+5.  SEARCH: **ONLY as a last resort.** Choose SEARCH if, and only if, **ALL** of the following conditions are met:
+    a. There are NO unvisited URLs in 'Recent Search Results' that you deem relevant and promising for any part of the 'Research Plan Outline'.
+    b. You have already considered if \`RETRIEVE_CHUNKS\` could answer the immediate need.
+    c. More general information or new starting points are absolutely essential for an uncovered part of the outline.
+    Avoid previously attempted queries listed below, or queries that are extremely similar.
 
 Current Iteration: {iteration}/{max_iterations}
 

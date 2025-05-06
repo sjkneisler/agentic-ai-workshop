@@ -84,7 +84,7 @@
 *   ✅ Reorganize node files (`clarifier`, `reasoner`, `synthesizer`) into `agent/nodes/`.
 *   ✅ Rewire graph in `agent/__init__.py` for the new loop.
 *   ✅ Commit: **“Implement deep research loop architecture.”**
-*   *Note: Significant debugging performed on state persistence (`seen_queries`, `seen_urls`, `query_for_retrieval`, `search_results`), graph routing (`Embed->Retrieve`), and reasoner logic/prompting to achieve basic working loop.*
+*   *Note: Significant debugging performed on state persistence (`seen_queries`, `seen_urls`, `query_for_retrieval`, `search_results`), graph routing (`Embed->Retrieve`), reasoner logic/prompting, and fetch tool error handling. Graph recursion limit made configurable.*
 
 ---
 

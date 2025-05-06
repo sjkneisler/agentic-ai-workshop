@@ -30,6 +30,7 @@ from .nodes.consolidate import consolidate_notes_node # Consolidates notes befor
 # --- Shared Utilities Import ---
 from .utils import print_verbose, RICH_AVAILABLE, console # Import shared logging
 from .state import AgentState # Import AgentState from the correct file for type hint
+from .config import get_graph_config # Import graph config getter
 
 # --- Define Conditional Edges & Error Handler ---
 
@@ -196,6 +197,7 @@ workflow.add_conditional_edges(
 workflow.add_edge("error_handler", END)
 
 # Compile the graph
+graph_config = get_graph_config()
 app = workflow.compile()
 
 
@@ -237,7 +239,7 @@ def run_agent(question: str, verbosity_level: int = 1) -> tuple[str, list[str], 
     try:
         # Invoke the graph with stream() for potential intermediate state logging
         # Or use invoke() for final result only
-        final_state = app.invoke(initial_state)
+        final_state = app.invoke(initial_state, { "recursion_limit": graph_config.get('recursion_limit', 100)})
 
         # Log final state details if verbose
         if is_verbose and final_state:

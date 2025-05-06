@@ -28,3 +28,5 @@ pytest    # Version not found in pip freeze output
 # Optional for nice output
 rich      # Version not found in pip freeze output
 beautifulsoup4
+
+requests_html

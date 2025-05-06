@@ -3,6 +3,7 @@ Tool for fetching and extracting content from a URL.
 """
 import warnings
 from typing import Dict, Any
+import requests # Import the requests library
 from requests_html import HTMLSession, MaxRetries
 from langchain_core.tools import tool
 
@@ -67,7 +68,7 @@ def fetch_url(url: str) -> Dict[str, Any]:
             "html": html_content.strip() # Return the HTML string
         }
 
-    except requests_html.requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException as e: # Use requests.exceptions
         error_msg = f"Network error fetching {url}: {e}"
         warnings.warn(error_msg)
         return {"error": error_msg, "url": url}

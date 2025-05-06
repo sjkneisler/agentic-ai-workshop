@@ -39,7 +39,7 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
     summarizer_llm = initialize_llm(
         model_config_key='model',
         temp_config_key='temperature',
-        default_model=summarizer_config.get('model', 'gpt-3.5-turbo'),
+        default_model=summarizer_config.get('model', 'gpt-4o-mini'),
         default_temp=summarizer_config.get('temperature', 0.0)
     )
 
@@ -108,6 +108,6 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
 
 # Example config remains the same
 # summarizer:
-#   model: gpt-3.5-turbo
+#   model: gpt-4o-mini
 #   temperature: 0.0
 #   system_prompt: "..." # Optional override

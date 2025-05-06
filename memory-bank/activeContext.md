@@ -43,11 +43,24 @@ Current efforts are focused on:
 - **`state.py`:**
     - Added `query_for_retrieval: Optional[str]` field.
     - Added `seen_urls: Set[str]` field.
-- **`__init__.py`:**
+- **`__init__.py` (Graph Definition & Execution):**
     - Corrected graph flow: Added conditional edge logic (`route_after_chunk_embed`) to route from `chunk_and_embed_node` -> `retrieve_relevant_chunks_node` (using `query_for_retrieval`) instead of back to `reason_node`.
     - Fixed `ImportError` for `AgentState`.
+    - **Made LangGraph recursion limit configurable:**
+        - Modified `app.invoke()` call in `run_agent` function to pass `{"recursion_limit": configured_value}`.
+        - Imported `get_graph_config` from `agent.config` to fetch the configured value.
+        - `app.compile()` remains unchanged regarding recursion limit.
 - **`retrieve.py`:**
     - Modified to use `query_for_retrieval` from state for vector store query instead of `current_query`.
+- **`agent/tools/fetch.py` (Fetch Tool):**
+    - **Fixed `NameError: name 'requests_html' is not defined`:**
+        - Added `import requests`.
+        - Changed exception handling from `requests_html.requests.exceptions.RequestException` to `requests.exceptions.RequestException`.
+- **`agent/config.py` (Configuration Loading):**
+    - Added `graph` section to `DEFAULT_CONFIG` with `recursion_limit`.
+    - Added `get_graph_config()` getter function.
+- **`config.yaml` (User Configuration):**
+    - Added `graph` section with `recursion_limit` key, allowing user customization.
 
 *(Previous changes like initial LangGraph adoption, RAG implementation, Clarifier implementation, etc., are documented below)*
 
@@ -69,9 +82,9 @@ Current efforts are focused on:
 3.  **Run/Update Automated Tests:**
     *   Execute `python3 -m pytest`. Tests will need significant updates for the new architecture and state variables.
 4.  **Update README & Docs:**
-    *   Ensure README reflects the corrected flow and new state variables (`query_for_retrieval`, `seen_urls`).
+    *   Ensure README reflects the corrected flow, new state variables (`query_for_retrieval`, `seen_urls`), and the new `graph.recursion_limit` configuration option.
 5.  **Polish Pass:**
-    *   Pin requirements, validate configs, review outputs, address TODOs.
+    *   Pin requirements, validate configs (including new `graph.recursion_limit`), review outputs, address TODOs.
 
 ## Active Decisions & Considerations
 
@@ -84,5 +97,5 @@ Current efforts are focused on:
 - **Content Handling:** Fetch -> Chunk/Batch Embed -> Retrieve -> Summarize flow implemented. Batching added to embedding for large documents.
 - **Vector Store:** Still ephemeral in-memory Chroma per run.
 - **Summarization/Consolidation/Source Tracking:** No changes in this session.
-- **Configuration/File Structure:** No changes in this session.
-- **Testing:** Still requires significant updates.
+- **Configuration/File Structure:** Added `graph` section to `config.yaml` and `agent/config.py` for `recursion_limit`. Fetch tool (`agent/tools/fetch.py`) import corrected.
+- **Testing:** Still requires significant updates. The fetch tool fix should resolve one class of runtime errors. Increased recursion limit may allow for more extensive test scenarios.

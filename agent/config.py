@@ -30,9 +30,9 @@ Structure your answer clearly. Do not invent facts or information not present in
         'rag_internal_link_k': 2
     },
     'reasoner': { # Config for the decision-making LLM
-        'model': 'gpt-4o-mini',
-        'temperature': 0.1,
-        'max_iterations': 5, # Max cycles of search/fetch/retrieve/summarize
+        'model': 'gpt-o4-mini',
+        'temperature': 1,
+        'max_iterations': 20, # Max cycles of search/fetch/retrieve/summarize
         'system_prompt': """
 You are the reasoning core of a research agent. Your goal is to decide the single next step to fulfill the research plan based on the information gathered so far.
 
@@ -58,7 +58,7 @@ Argument: [Your search query | URL to fetch | Your vector store query | None]
         'model': 'text-embedding-3-small' # Default model for chunk embeddings
     },
     'summarizer': {
-        'model': 'gpt-3.5-turbo', # Cheaper model for summarizing chunks
+        'model': 'gpt-4o-mini', # Cheaper model for summarizing chunks
         'temperature': 0.0,
         'system_prompt': "You are an efficient assistant. Summarize the key facts from the following passages in bullet points (maximum 120 words total). Focus on information relevant to the original query. Keep exact numbers/quotes where possible. **Cite each claim meticulously using the EXACT source citation tag provided with each passage, like [Source URL='...', Title='...', Chunk=...]. Do NOT alter the citation tag format.**"
     },
@@ -76,6 +76,9 @@ Argument: [Your search query | URL to fetch | Your vector store query | None]
         'refinement_model': 'gpt-4o-mini',    # Model for refining question and generating outline
         'clarification_temperature': 0.2,
         'refinement_temperature': 0.5
+    },
+    'graph': { # Configuration for the LangGraph execution
+        'recursion_limit': 100 # Default recursion limit for the graph
     }
 }
 
@@ -143,3 +146,7 @@ def get_consolidator_config() -> Dict[str, Any]:
 def get_clarifier_config() -> Dict[str, Any]: # Added getter for clarifier
     """Returns the configuration for the clarifier node."""
     return CONFIG.get('clarifier', DEFAULT_CONFIG['clarifier'])
+
+def get_graph_config() -> Dict[str, Any]:
+    """Returns the configuration for graph execution parameters."""
+    return CONFIG.get('graph', DEFAULT_CONFIG['graph'])
