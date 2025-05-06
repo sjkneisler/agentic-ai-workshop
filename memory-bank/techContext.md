@@ -34,7 +34,7 @@
 - Clone the repository.
 - Install dependencies: `pip install -r requirements.txt` (includes `requests-html`, `lxml[html_clean]`, `sentence-transformers`, etc.).
 - Configure environment variables by copying `.env.example` to `.env` and filling in API keys (`SERPER_API_KEY`, `OPENAI_API_KEY`).
-- Configure agent behavior by creating/editing `config.yaml` (includes sections for `reasoner`, `embedding`, `summarizer`, `retriever`, `consolidator`, `synthesizer`, and `graph` for recursion limit). - UPDATED
+- Configure agent behavior by creating/editing `config.yaml` (includes sections for `reasoner`, `embedding`, `summarizer`, `retriever`, `consolidator`, `synthesizer`, `graph` for recursion limit, and `prompt_logging`). - UPDATED
 - Optionally, specify `RAG_DOC_PATH` in `.env` (currently unused by main loop).
 
 ## Technical Constraints

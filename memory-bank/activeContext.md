@@ -2,67 +2,50 @@
 
 ## Current Work Focus
 
-The primary focus remains on verifying and refining the **Deep Research Loop** architecture. Recent testing revealed several issues requiring debugging:
-
-- **Repetitive Actions:** The `reason_node` initially got stuck in loops, repeatedly suggesting the same SEARCH query or FETCH URL.
-- **State Persistence:** Key pieces of state were not being correctly passed between nodes or iterations, specifically:
-    - The query used for search wasn't available for retrieval after fetching/embedding.
-    - Search results were being cleared prematurely, preventing the reasoner from considering alternative URLs from the same search.
-- **Incorrect Graph Flow:** The graph initially routed back to the `reason_node` after embedding, skipping the crucial retrieval and summarization steps.
-
+The primary focus is on **Enhancing Agent Observability and Efficiency**.
 Current efforts are focused on:
-- **Debugging Loop Logic:** Ensuring the `reason_node` uses state effectively (like `seen_queries`, `seen_urls`, `notes`, persistent `search_results`) to make better decisions and avoid redundant actions.
-- **Verifying State Updates:** Confirming that state variables (`query_for_retrieval`, `seen_urls`, `search_results`) are correctly updated and preserved by each node and the LangGraph framework.
-- **Testing Corrected Flow:** Running the agent to confirm the intended `Embed -> Retrieve -> Summarize -> Reasoner` flow is now executing.
-- **Refinement:** Further tuning of the `reasoner_node` prompt might be needed if suboptimal decisions persist.
-- **Testing:** Updating `pytest` tests remains a pending task.
+- Implementing **Prompt Logging** (Complete for core LLM nodes). This allows for better debugging, analysis of LLM interactions, and data collection.
+- Preparing for the implementation of **Persistent Website Caching** with ChromaDB and a Time-To-Live (TTL) mechanism to avoid redundant web fetches and indexing.
+- Ongoing **Testing and Refinement** of the Deep Research Loop architecture.
 
-## Recent Changes (Deep Research Loop Implementation & Debugging)
+## Recent Changes
 
-**Initial Implementation:**
-- **New Graph Structure:** Defined in `agent/__init__.py`.
-- **Reasoner Refactor:** `agent/nodes/reasoner.py` became a decision-making LLM call.
-- **New Nodes Added:** `search`, `fetch`, `chunk_embed`, `retrieve`, `summarize`, `consolidate` nodes created in `agent/nodes/`.
-- **New Tool Added:** `fetch_url` tool in `agent/tools/fetch.py`.
-- **State Update:** Added fields to `agent/state.py` for loop control and data handling.
-- **Synthesizer Update:** Modified for citation handling.
-- **Configuration Update:** Added sections to `config.yaml` / `agent/config.py`.
-- **Dependencies Update:** Added `requests-html`, `lxml[html_clean]`, `sentence-transformers`.
-- **File Organization:** Nodes moved into `agent/nodes/`.
+**Prompt Logging Implementation (This Session):**
+- **Configuration:**
+    - Added a `prompt_logging` section to `config.yaml` with `enabled` and `log_file_path` options.
+    - Updated `agent/config.py` with `prompt_logging` in `DEFAULT_CONFIG` and a `get_prompt_logging_config()` getter.
+- **Utility:**
+    - Created `log_prompt_data` function in `agent/utils.py` to handle writing timestamped prompt, response, and metadata to a JSONL file.
+- **Node Integration:**
+    - Integrated `log_prompt_data` into the following LLM-interacting nodes:
+        - `agent/nodes/clarifier.py` (for both clarification check and refinement/outline generation calls)
+        - `agent/nodes/reasoner.py` (for the decision-making call)
+        - `agent/nodes/summarize.py` (for the summarization call)
+        - `agent/nodes/synthesizer.py` (for the final answer synthesis call)
+- **Bug Fixes during Logging Implementation:**
+    - Resolved `NameError: name 'Dict' is not defined` in `agent/utils.py` by adding `Dict` to `typing` imports.
+    - Resolved `AttributeError: 'ChatOpenAI' object has no attribute 'model'` in `agent/nodes/clarifier.py` by correcting access to `model_name` and `temperature` on LangChain LLM objects for logging.
 
-**Debugging Fixes (This Session):**
-- **`reasoner.py`:**
-    - Added tracking of `seen_queries` to state and prompt to prevent repeating exact searches.
-    - Added tracking of `seen_urls` to state and prompt to prevent repeating exact fetches.
-    - Strengthened prompt instructions to avoid fetching seen URLs and consider alternatives.
-    - Corrected logic to stop clearing `search_results` prematurely, allowing results to persist across iterations.
-    - Introduced `query_for_retrieval` state variable to correctly pass the relevant query from SEARCH through FETCH/EMBED to RETRIEVE. Updated state update logic accordingly.
-- **`chunk_embed.py`:**
-    - Implemented batching for `vector_store.add_documents()` to handle OpenAI token limits for large pages.
-    - Corrected state update logic to preserve `query_for_retrieval` (previously tried preserving `current_query` incorrectly).
-- **`state.py`:**
-    - Added `query_for_retrieval: Optional[str]` field.
-    - Added `seen_urls: Set[str]` field.
-- **`__init__.py` (Graph Definition & Execution):**
-    - Corrected graph flow: Added conditional edge logic (`route_after_chunk_embed`) to route from `chunk_and_embed_node` -> `retrieve_relevant_chunks_node` (using `query_for_retrieval`) instead of back to `reason_node`.
-    - Fixed `ImportError` for `AgentState`.
-    - **Made LangGraph recursion limit configurable:**
-        - Modified `app.invoke()` call in `run_agent` function to pass `{"recursion_limit": configured_value}`.
-        - Imported `get_graph_config` from `agent.config` to fetch the configured value.
-        - `app.compile()` remains unchanged regarding recursion limit.
-- **`retrieve.py`:**
-    - Modified to use `query_for_retrieval` from state for vector store query instead of `current_query`.
-- **`agent/tools/fetch.py` (Fetch Tool):**
-    - **Fixed `NameError: name 'requests_html' is not defined`:**
-        - Added `import requests`.
-        - Changed exception handling from `requests_html.requests.exceptions.RequestException` to `requests.exceptions.RequestException`.
-- **`agent/config.py` (Configuration Loading):**
-    - Added `graph` section to `DEFAULT_CONFIG` with `recursion_limit`.
-    - Added `get_graph_config()` getter function.
-- **`config.yaml` (User Configuration):**
-    - Added `graph` section with `recursion_limit` key, allowing user customization.
-
-*(Previous changes like initial LangGraph adoption, RAG implementation, Clarifier implementation, etc., are documented below)*
+**(Previous Session: Deep Research Loop Implementation & Debugging)**
+- **Initial Implementation:**
+    - New Graph Structure: Defined in `agent/__init__.py`.
+    - Reasoner Refactor: `agent/nodes/reasoner.py` became a decision-making LLM call.
+    - New Nodes Added: `search`, `fetch`, `chunk_embed`, `retrieve`, `summarize`, `consolidate` nodes created in `agent/nodes/`.
+    - New Tool Added: `fetch_url` tool in `agent/tools/fetch.py`.
+    - State Update: Added fields to `agent/state.py` for loop control and data handling.
+    - Synthesizer Update: Modified for citation handling.
+    - Configuration Update: Added sections to `config.yaml` / `agent/config.py`.
+    - Dependencies Update: Added `requests-html`, `lxml[html_clean]`, `sentence-transformers`.
+    - File Organization: Nodes moved into `agent/nodes/`.
+- **Debugging Fixes (Previous Session):**
+    - `reasoner.py`: Added `seen_queries`, `seen_urls`; strengthened prompt; corrected `search_results` persistence; introduced `query_for_retrieval`.
+    - `chunk_embed.py`: Implemented batching; corrected `query_for_retrieval` preservation.
+    - `state.py`: Added `query_for_retrieval`, `seen_urls`.
+    - `__init__.py`: Corrected graph flow (`route_after_chunk_embed`); fixed `ImportError`; made recursion limit configurable.
+    - `retrieve.py`: Modified to use `query_for_retrieval`.
+    - `agent/tools/fetch.py`: Fixed `NameError: name 'requests_html' is not defined`.
+    - `agent/config.py`: Added `graph` section and getter.
+    - `config.yaml`: Added `graph` section.
 
 --- (Previous Change Log Snippets for Context) ---
 
@@ -73,29 +56,45 @@ Current efforts are focused on:
 
 ## Next Steps
 
-1.  **Verify Current Fixes:**
-    *   Run the agent again (`python3 main.py "..." --verbose`) to confirm that:
-        *   `search_results` persist across iterations.
-        *   The agent attempts to fetch *different* URLs from the search results if the first is already seen.
-        *   The flow correctly proceeds `Embed -> Retrieve -> Summarize`.
-2.  **Refine Reasoner (If Needed):** If the agent still makes suboptimal choices (e.g., unnecessary searches when unseen URLs are available), further refine the `reasoner.py` system prompt or logic.
-3.  **Run/Update Automated Tests:**
-    *   Execute `python3 -m pytest`. Tests will need significant updates for the new architecture and state variables.
-4.  **Update README & Docs:**
-    *   Ensure README reflects the corrected flow, new state variables (`query_for_retrieval`, `seen_urls`), and the new `graph.recursion_limit` configuration option.
-5.  **Polish Pass:**
-    *   Pin requirements, validate configs (including new `graph.recursion_limit`), review outputs, address TODOs.
+1.  **Implement Persistent Website Caching:**
+    *   Upgrade `session_vector_store` (ChromaDB) to be persistent.
+    *   Implement a TTL mechanism, potentially using SQLite to track URL indexing timestamps.
+    *   Modify `reasoner_node` to consider these timestamps.
+    *   Update `chunk_embed_node` to record successful indexing timestamps.
+    *   Make ChromaDB path and TTL configurable.
+2.  **Verify Prompt Logging:**
+    *   Run the agent with logging enabled (`config.yaml`).
+    *   Inspect the generated log file (`logs/prompt_logs.jsonl` by default) to ensure correct format and content.
+3.  **Verify Deep Research Loop Fixes (If not already confirmed):**
+    *   Run the agent again (`python3 main.py "..." --verbose`) to confirm:
+        *   `search_results` persist.
+        *   Agent attempts different URLs if first is seen.
+        *   Flow correctly proceeds `Embed -> Retrieve -> Summarize`.
+4.  **Refine Reasoner (If Needed):** If suboptimal choices persist.
+5.  **Run/Update Automated Tests:**
+    *   Execute `python3 -m pytest`. Tests will need significant updates for new architecture, state variables, and new features like logging and caching.
+6.  **Update README & Docs:**
+    *   Reflect prompt logging feature.
+    *   Reflect persistent caching feature (once implemented).
+    *   Ensure README reflects corrected flow, state variables, and configuration options.
+7.  **Polish Pass:**
+    *   Pin requirements, validate all configs, review outputs, address TODOs.
 
 ## Active Decisions & Considerations
 
 - **Agent Architecture:** Confirmed as explicit "Deep Research Loop" graph. Flow corrected to `Embed -> Retrieve -> Summarize -> Reasoner`.
+- **Observability:** Implemented prompt logging to `agent/utils.py` and integrated into core LLM nodes (`clarifier`, `reasoner`, `summarizer`, `synthesizer`) for better insight into LLM interactions. Configurable via `config.yaml`.
 - **Reasoner:** Remains central decision-maker. Prompt strengthened to handle `seen_urls` and persistent `search_results`.
 - **State Management:**
     - Introduced `query_for_retrieval` to pass the correct context from Search to Retrieve.
     - Introduced `seen_urls` to prevent redundant fetches.
     - Modified `reasoner.py` to persist `search_results` across iterations until consolidation/stop.
 - **Content Handling:** Fetch -> Chunk/Batch Embed -> Retrieve -> Summarize flow implemented. Batching added to embedding for large documents.
-- **Vector Store:** Still ephemeral in-memory Chroma per run.
-- **Summarization/Consolidation/Source Tracking:** No changes in this session.
-- **Configuration/File Structure:** Added `graph` section to `config.yaml` and `agent/config.py` for `recursion_limit`. Fetch tool (`agent/tools/fetch.py`) import corrected.
-- **Testing:** Still requires significant updates. The fetch tool fix should resolve one class of runtime errors. Increased recursion limit may allow for more extensive test scenarios.
+- **Vector Store:** Currently ephemeral in-memory Chroma per run. Next step is to make this persistent with TTL.
+- **Summarization/Consolidation/Source Tracking:** No changes in this session beyond integrating prompt logging.
+- **Configuration/File Structure:**
+    - Added `graph` section to `config.yaml` and `agent/config.py` for `recursion_limit`.
+    - Added `prompt_logging` section to `config.yaml` and `agent/config.py`.
+    - Added `log_prompt_data` utility to `agent/utils.py`.
+    - Fetch tool (`agent/tools/fetch.py`) import corrected in previous session.
+- **Testing:** Still requires significant updates. Prompt logging and upcoming caching will require new test considerations.

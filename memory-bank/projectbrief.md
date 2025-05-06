@@ -36,8 +36,8 @@ Create a runnable Python project demonstrating a research agent pipeline:
 ├── agent/
 │   ├── __init__.py                 # Defines LangGraph graph, imports nodes - UPDATED
 │   ├── state.py                    # Defines AgentState TypedDict - UPDATED (session store, notes, etc.)
-│   ├── utils.py                    # Shared utilities (logging, LLM init, etc.)
-│   ├── config.py                   # Config loader - UPDATED (new component configs)
+│   ├── utils.py                    # Shared utilities (LLM init, verbosity, prompt logging, etc.) - UPDATED
+│   ├── config.py                   # Config loader - UPDATED (new component configs, prompt_logging) - UPDATED
 │   ├── search.py                   # serper_search() utility function
 │   ├── rag.py                      # RAG interface (kept for future use)
 │   ├── rag_utils/                  # RAG utilities (kept for future use)
@@ -54,6 +54,8 @@ Create a runnable Python project demonstrating a research agent pipeline:
 │       ├── retrieve.py             # retrieve_relevant_chunks_node() - NEW
 │       ├── summarize.py            # summarize_chunks_node() - NEW (with citations)
 │       └── consolidate.py          # consolidate_notes_node() - NEW (with re-ranking)
+├── logs/                             # Optional: Created if prompt_logging is enabled
+│   └── prompt_logs.jsonl           # Example log file
 └── tests/
     ├── mock_serper.json            # fixture
     └── test_agent.py               # Needs significant updates for new flow
@@ -101,8 +103,9 @@ RAG_DOC_PATH=./my_docs    # optional, currently unused by main loop
 *   No license file (private/internal use only).
 *   If API keys are missing, script must fail gracefully with clear message.
 *   All functions must include docstrings specifying I/O expectations.
-*   Configuration managed via `config.yaml` (behavior, models, prompts, thresholds) and `.env` (secrets). Shared utilities (`agent/utils.py`) handle LLM/embedding initialization and logging.
+*   Configuration managed via `config.yaml` (behavior, models, prompts, thresholds, prompt_logging) and `.env` (secrets). Shared utilities (`agent/utils.py`) handle LLM/embedding initialization and the prompt logging mechanism.
 *   Output verbosity controlled by `--quiet`, default, and `--verbose`. Source display is handled via post-processing in the synthesizer.
+*   Prompt logging for LLM interactions is available and configurable via `config.yaml`, saving to a specified JSONL file (e.g., `logs/prompt_logs.jsonl`).
 
 ---
 
@@ -119,7 +122,7 @@ RAG_DOC_PATH=./my_docs    # optional, currently unused by main loop
 1.  **Project Overview**: Update to describe the deep research loop.
 2.  **Quickstart**: Update dependencies (`requests-html`, `lxml`, `sentence-transformers`).
 3.  **How It Works**: Update diagram + explanation for the new graph flow.
-4.  **Configuration**: Explain `config.yaml` including new sections (`embedding`, `summarizer`, `retriever`, `consolidator`).
+4.  **Configuration**: Explain `config.yaml` including new sections (`embedding`, `summarizer`, `retriever`, `consolidator`, `graph`, `prompt_logging`).
 5.  **Customize It**: Explain modifying nodes, prompts in config.
 6.  **RAG Setup**: Mention RAG code exists but is not currently used in the main loop.
 7.  **Verbosity Modes**: Explain `--quiet`, default, and `--verbose`.

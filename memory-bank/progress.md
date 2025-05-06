@@ -107,6 +107,15 @@
 
 ---
 
+#### ✅ Chunk 12 – Prompt Logging System
+*   ✅ Add `prompt_logging` config to `config.yaml` and `agent/config.py`.
+*   ✅ Create `log_prompt_data` utility in `agent/utils.py`.
+*   ✅ Integrate logging into `clarifier`, `reasoner`, `summarize`, `synthesizer` nodes.
+*   ✅ Fix associated bugs (`NameError` in `utils.py`, `AttributeError` in `clarifier.py`).
+*   ✅ Commit: **"Implement prompt logging system for LLM interactions."**
+
+---
+
 **Done?** The repo should:
 
 *   run `python main.py` with the new deep research loop flow,

@@ -25,7 +25,7 @@ This project aims to create a clear, runnable demonstration of a research agent 
     - **Consolidate Node (`consolidate.py`):** Takes all `notes`, re-ranks them against the `clarified_question` using a sentence-transformer cross-encoder. Selects the top N notes and formats them into `combined_context`. Proceeds to Synthesize.
     - **Synthesis Node (`synthesizer.py`):** Generates the final answer using a primary LLM (via `utils.py`) based on `clarified_question` and `combined_context` (curated notes). Preserves detailed citations during generation, then post-processes the answer to create a numbered reference list and replace inline citations with numbers (e.g., `[ref:1]`). Updates `final_answer`.
 - The LangGraph application (`app`) is invoked by `agent.run_agent()`.
-- It utilizes external APIs (Serper for search, OpenAI for LLMs/embeddings) configured via `.env` (API keys) and `config.yaml` (models, prompts, component settings).
+- It utilizes external APIs (Serper for search, OpenAI for LLMs/embeddings) configured via `.env` (API keys) and `config.yaml` (models, prompts, component settings, prompt_logging).
 - The final synthesized answer (with references) or error message is printed to the console. Output detail is controlled via CLI flags.
 
 ## User Experience Goals
@@ -34,4 +34,4 @@ This project aims to create a clear, runnable demonstration of a research agent 
 - **Clarity:** The agent's flow and the code for each module should be understandable, demonstrating a clear research pattern.
 - **Extensibility:** Users should feel empowered to modify node behavior (e.g., prompts via config), add tools, or integrate other components (like the existing RAG).
 - **Graceful Failure:** The agent should provide clear error messages if required configurations or dependencies are missing.
-- **Transparency:** Verbose mode should allow users to follow the decision-making and data flow through the graph nodes.
+- **Transparency:** Verbose mode allows users to follow the decision-making and data flow through graph nodes. The new prompt logging feature (configurable in `config.yaml`) provides even deeper insight by saving LLM interactions to a local file for detailed analysis and debugging.

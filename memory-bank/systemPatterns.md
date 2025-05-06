@@ -21,6 +21,7 @@ Below is a **two-tier implementation roadmap** reflecting the current agent arch
 | **9**   | *Local Tests*                                | `pytest` with mocks (needs significant update for new flow).                                                                          | ⏳     |
 | **10**  | *README & Docs*                              | Populate README reflecting new architecture. Update Memory Bank (this process).                                                       | ⏳     |
 | **11**  | *Polish Pass*                                | Verify `.env.example`, `config.yaml`, print-styles, error messages, requirements pinning.                                             | ⏳     |
+| **12**  | *Prompt Logging System*                      | Implement configurable logging for LLM prompts and responses to aid debugging and analysis.                                             | ✅     |
 
 ---
 
@@ -68,6 +69,16 @@ Below is a **two-tier implementation roadmap** reflecting the current agent arch
 3.  Review print styles (`print_verbose`) and error messages across all nodes.
 4.  Address any remaining TODOs.
 5.  Commit: “Final polish and documentation update.”
+
+### **Chunk 12 – Prompt Logging System** (✅)
+
+1.  **Configuration:** Add `prompt_logging` section to `config.yaml` (with `enabled`, `log_file_path`) and to `DEFAULT_CONFIG` in `agent/config.py` with a corresponding getter function.
+2.  **Utility Function:** Create `log_prompt_data(node_name, prompt, response, additional_info)` in `agent/utils.py` to handle JSONL file writing, directory creation, and timestamping.
+3.  **Node Integration:** Import and call `log_prompt_data` in `agent/nodes/clarifier.py`, `agent/nodes/reasoner.py`, `agent/nodes/summarize.py`, and `agent/nodes/synthesizer.py` after LLM invocations.
+4.  **Bug Fixing:**
+*   Resolve `NameError: name 'Dict' is not defined` in `agent/utils.py` by importing `Dict` from `typing`.
+*   Resolve `AttributeError: 'ChatOpenAI' object has no attribute 'model'` in `agent/nodes/clarifier.py` by using `model_name` for LangChain objects.
+5.  **Commit:** "Implement prompt logging system for LLM interactions."
 
 ---
 
