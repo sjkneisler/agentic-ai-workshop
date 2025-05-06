@@ -97,6 +97,9 @@ Argument: [Your search query | URL to fetch | Your vector store query | None]
             "text-embedding-3-small": {
                 "cost_per_million_tokens": 0.02
             },
+            "text-embedding-3-large": {
+                "cost_per_million_tokens": 0.13
+            },
             "text-embedding-ada-002": {
                 "cost_per_million_tokens": 0.10
             }

@@ -150,18 +150,10 @@ Structure your answer clearly. Do not invent facts or information not present in
                     response = llm.invoke(messages)
                     raw_answer = response.content if hasattr(response, 'content') else str(response)
 
-                    prompt_tokens = cb.prompt_tokens
-                    completion_tokens = cb.completion_tokens
-                    model_name_for_cost = llm.model_name if hasattr(llm, 'model_name') else synth_config.get('model')
-                    
-                    model_pricing_info = pricing_config.get(model_name_for_cost)
-                    if model_pricing_info:
-                        input_cost_pm = model_pricing_info.get('input_cost_per_million_tokens', 0)
-                        output_cost_pm = model_pricing_info.get('output_cost_per_million_tokens', 0)
-                        call_cost_iter = (prompt_tokens / 1_000_000 * input_cost_pm) + \
-                                         (completion_tokens / 1_000_000 * output_cost_pm)
-                        current_call_cost += call_cost_iter
-                        if verbose: print_verbose(f"Synthesizer call cost: ${call_cost_iter:.6f}", style="dim yellow")
+                    # Cost is now directly from the callback handler
+                    call_cost_iter = cb.total_cost
+                    current_call_cost += call_cost_iter
+                    if verbose: print_verbose(f"Synthesizer call cost: ${call_cost_iter:.6f}", style="dim yellow")
             else:
                 response = llm.invoke(messages)
                 raw_answer = response.content if hasattr(response, 'content') else str(response)

@@ -150,18 +150,10 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, fl
                     "question": question,
                     "json_schema": json_schema_instructions
                 })
-                prompt_tokens = cb.prompt_tokens
-                completion_tokens = cb.completion_tokens
-                model_name = clarification_llm_instance.model_name
-                
-                model_pricing_info = pricing_config.get(model_name)
-                if model_pricing_info:
-                    input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
-                    output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
-                    call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
-                                     (completion_tokens / 1_000_000 * output_cost)
-                    current_call_cost += call_cost_iter
-                    if verbose: print_verbose(f"Clarification check call cost: ${call_cost_iter:.6f}", style="dim yellow")
+                # Cost is now directly from the callback handler
+                call_cost_iter = cb.total_cost
+                current_call_cost += call_cost_iter
+                if verbose: print_verbose(f"Clarification check call cost: ${call_cost_iter:.6f}", style="dim yellow")
         else:
             clarification_info: Dict = clarification_check_chain.invoke({
                 "question": question,
@@ -207,18 +199,10 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, fl
                         "conversation_history": conversation_history_str,
                         "refinement_json_schema": refinement_schema_instructions
                     })
-                    prompt_tokens = cb.prompt_tokens
-                    completion_tokens = cb.completion_tokens
-                    model_name = refinement_llm_instance.model_name
-                    
-                    model_pricing_info = pricing_config.get(model_name)
-                    if model_pricing_info:
-                        input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
-                        output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
-                        call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
-                                         (completion_tokens / 1_000_000 * output_cost)
-                        current_call_cost += call_cost_iter
-                        if verbose: print_verbose(f"Refinement (no Q&A) call cost: ${call_cost_iter:.6f}", style="dim yellow")
+                    # Cost is now directly from the callback handler
+                    call_cost_iter = cb.total_cost
+                    current_call_cost += call_cost_iter
+                    if verbose: print_verbose(f"Refinement (no Q&A) call cost: ${call_cost_iter:.6f}", style="dim yellow")
             else:
                 refinement_result: Dict = refinement_chain.invoke({
                     "conversation_history": conversation_history_str,
@@ -286,18 +270,10 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, fl
                     "conversation_history": conversation_history_str,
                     "refinement_json_schema": refinement_schema_instructions
                 })
-                prompt_tokens = cb.prompt_tokens
-                completion_tokens = cb.completion_tokens
-                model_name = refinement_llm_instance.model_name
-
-                model_pricing_info = pricing_config.get(model_name)
-                if model_pricing_info:
-                    input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
-                    output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
-                    call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
-                                     (completion_tokens / 1_000_000 * output_cost)
-                    current_call_cost += call_cost_iter
-                    if verbose: print_verbose(f"Refinement (with Q&A) call cost: ${call_cost_iter:.6f}", style="dim yellow")
+                # Cost is now directly from the callback handler
+                call_cost_iter = cb.total_cost
+                current_call_cost += call_cost_iter
+                if verbose: print_verbose(f"Refinement (with Q&A) call cost: ${call_cost_iter:.6f}", style="dim yellow")
         else:
             refinement_result: Dict = refinement_chain.invoke({
                 "conversation_history": conversation_history_str,

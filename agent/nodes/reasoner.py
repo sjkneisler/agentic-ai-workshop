@@ -168,18 +168,10 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
                 response = reasoner_llm.invoke(messages)
                 decision_text = response.content if hasattr(response, 'content') else str(response)
                 
-                prompt_tokens = cb.prompt_tokens
-                completion_tokens = cb.completion_tokens
-                model_name = reasoner_llm.model_name if hasattr(reasoner_llm, 'model_name') else reasoner_config.get('model')
-
-                model_pricing_info = pricing_config.get(model_name)
-                if model_pricing_info:
-                    input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
-                    output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
-                    call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
-                                     (completion_tokens / 1_000_000 * output_cost)
-                    current_node_call_cost += call_cost_iter
-                    if is_verbose: print_verbose(f"Reasoner call cost: ${call_cost_iter:.6f}", style="dim yellow")
+                # Cost is now directly from the callback handler
+                call_cost_iter = cb.total_cost
+                current_node_call_cost += call_cost_iter
+                if is_verbose: print_verbose(f"Reasoner call cost: ${call_cost_iter:.6f}", style="dim yellow")
         else:
             response = reasoner_llm.invoke(messages)
             decision_text = response.content if hasattr(response, 'content') else str(response)

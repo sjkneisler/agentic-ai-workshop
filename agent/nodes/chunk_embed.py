@@ -176,19 +176,27 @@ def chunk_and_embed_node(state: AgentState) -> Dict[str, Any]:
                 # Process the current batch before adding the new chunk
                 if is_verbose: print_verbose(f"  Adding batch of {len(current_batch)} chunks ({current_batch_tokens} tokens)...", style="dim blue")
                 try:
-                    if LANGCHAIN_CALLBACKS_AVAILABLE:
-                        with get_openai_callback() as cb:
-                            vector_store.add_documents(current_batch)
-                            total_tokens_cb = cb.total_tokens
-                            model_pricing_info = pricing_config.get(embedding_model_name)
-                            if model_pricing_info:
-                                cost_pm = model_pricing_info.get('cost_per_million_tokens', 0)
-                                batch_cost_iter = (total_tokens_cb / 1_000_000) * cost_pm
-                                current_node_call_cost += batch_cost_iter
-                                if is_verbose: print_verbose(f"    Embedding batch cost: ${batch_cost_iter:.6f} ({total_tokens_cb} tokens)", style="dim yellow")
-                    else:
-                        vector_store.add_documents(current_batch)
-                        if is_verbose: print_verbose("    Langchain callbacks unavailable, skipping cost calculation for this embedding batch.", style="dim yellow")
+                    # Manually count tokens for the batch
+                    batch_total_manual_tokens = 0
+                    for doc_in_batch in current_batch:
+                        try:
+                            batch_total_manual_tokens += count_tokens(doc_in_batch.page_content, model=embedding_model_name)
+                        except Exception as e:
+                            warnings.warn(f"Token counting failed for a document in batch: {e}")
+                            # Fallback: estimate based on length if counting fails for a doc
+                            batch_total_manual_tokens += len(doc_in_batch.page_content) // 3
+
+                    vector_store.add_documents(current_batch) # Add documents to store
+                    
+                    # Calculate cost based on manually counted tokens
+                    model_pricing_info = pricing_config.get(embedding_model_name)
+                    if model_pricing_info:
+                        cost_pm = model_pricing_info.get('cost_per_million_tokens', 0)
+                        batch_cost_iter = (batch_total_manual_tokens / 1_000_000) * cost_pm
+                        current_node_call_cost += batch_cost_iter
+                        if is_verbose: print_verbose(f"    Embedding batch cost: ${batch_cost_iter:.6f} ({batch_total_manual_tokens} tokens)", style="dim yellow")
+                    elif is_verbose:
+                        print_verbose(f"    Pricing info not found for {embedding_model_name}, skipping cost calculation for this batch.", style="dim yellow")
                     
                     total_added_count += len(current_batch)
                     if is_verbose: print_verbose(f"  Batch added successfully. Total added: {total_added_count}", style="green")
@@ -211,19 +219,26 @@ def chunk_and_embed_node(state: AgentState) -> Dict[str, Any]:
             if i == len(all_chunks_to_add) - 1 and current_batch:
                  if is_verbose: print_verbose(f"  Adding final batch of {len(current_batch)} chunks ({current_batch_tokens} tokens)...", style="dim blue")
                  try:
-                    if LANGCHAIN_CALLBACKS_AVAILABLE:
-                        with get_openai_callback() as cb:
-                            vector_store.add_documents(current_batch)
-                            total_tokens_cb = cb.total_tokens
-                            model_pricing_info = pricing_config.get(embedding_model_name)
-                            if model_pricing_info:
-                                cost_pm = model_pricing_info.get('cost_per_million_tokens', 0)
-                                batch_cost_iter = (total_tokens_cb / 1_000_000) * cost_pm
-                                current_node_call_cost += batch_cost_iter
-                                if is_verbose: print_verbose(f"    Embedding final batch cost: ${batch_cost_iter:.6f} ({total_tokens_cb} tokens)", style="dim yellow")
-                    else:
-                        vector_store.add_documents(current_batch)
-                        if is_verbose: print_verbose("    Langchain callbacks unavailable, skipping cost calculation for this embedding batch.", style="dim yellow")
+                    # Manually count tokens for the final batch
+                    batch_total_manual_tokens = 0
+                    for doc_in_batch in current_batch:
+                        try:
+                            batch_total_manual_tokens += count_tokens(doc_in_batch.page_content, model=embedding_model_name)
+                        except Exception as e:
+                            warnings.warn(f"Token counting failed for a document in final batch: {e}")
+                            batch_total_manual_tokens += len(doc_in_batch.page_content) // 3
+
+                    vector_store.add_documents(current_batch) # Add documents to store
+
+                    # Calculate cost based on manually counted tokens
+                    model_pricing_info = pricing_config.get(embedding_model_name)
+                    if model_pricing_info:
+                        cost_pm = model_pricing_info.get('cost_per_million_tokens', 0)
+                        batch_cost_iter = (batch_total_manual_tokens / 1_000_000) * cost_pm
+                        current_node_call_cost += batch_cost_iter
+                        if is_verbose: print_verbose(f"    Embedding final batch cost: ${batch_cost_iter:.6f} ({batch_total_manual_tokens} tokens)", style="dim yellow")
+                    elif is_verbose:
+                        print_verbose(f"    Pricing info not found for {embedding_model_name}, skipping cost calculation for this final batch.", style="dim yellow")
 
                     total_added_count += len(current_batch)
                     if is_verbose: print_verbose(f"  Final batch added successfully. Total added: {total_added_count}", style="green")

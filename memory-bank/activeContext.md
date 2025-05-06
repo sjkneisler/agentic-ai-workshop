@@ -16,12 +16,18 @@ Current efforts are focused on:
 - **Configuration:**
 - Added `openai_pricing` section to `config.yaml` with model costs.
 - Updated `agent/config.py` to load pricing and add `get_openai_pricing_config()` getter.
-- **Node Integration (Cost Calculation):**
-- Modified `agent/nodes/clarifier.py`, `reasoner.py`, `chunk_embed.py`, `summarize.py`, `synthesizer.py`.
-- Imported `get_openai_callback` from `langchain_community.callbacks.manager`.
-- Wrapped LLM/embedding invocations with `get_openai_callback` to capture token usage.
-- Calculated cost based on token usage and pricing from config.
-- Updated `total_openai_cost` in the state returned by each node.
+- **Node Integration (Cost Calculation - Iterative Refinement):**
+  - **Initial Approach:** All LLM/embedding nodes (`clarifier.py`, `reasoner.py`, `chunk_embed.py`, `summarize.py`, `synthesizer.py`) were modified to use `get_openai_callback` to capture `prompt_tokens` and `completion_tokens`, calculating cost with pricing from `config.yaml`.
+  - **Second Approach:** Switched all above nodes to use `cb.total_cost` from the callback handler, relying on Langchain's internal pricing.
+  - **Current (Final) Approach:**
+    - **LLM Nodes (`clarifier.py`, `reasoner.py`, `summarize.py`, `synthesizer.py`):** Continue to use `cb.total_cost` from `get_openai_callback` for cost calculation. This leverages Langchain's internal pricing and handling of cached prompt tokens.
+    - **Embedding Node (`agent/nodes/chunk_embed.py`):**
+      - Reverted from using `cb.total_cost` or `cb.total_tokens` due to these not reliably reporting embedding token usage.
+      - Now manually counts tokens for each document batch using `agent.utils.count_tokens(text, model=embedding_model_name)` *before* the embedding API call.
+      - Calculates cost for these manually counted tokens using the `cost_per_million_tokens` from the `openai_pricing` section in `config.yaml`.
+      - The `get_openai_callback` context manager is no longer used for cost calculation in `chunk_embed.py`.
+      - Corrected a `TypeError` in `chunk_embed.py` by changing the `count_tokens` parameter from `model_name=` to `model=`.
+  - All nodes update `total_openai_cost` in the agent state.
 - **Agent Runner & Display:**
 - Modified `run_agent` in `agent/__init__.py` to initialize and return `total_openai_cost`.
 - Updated `main.py` to receive and print the `total_openai_cost`.

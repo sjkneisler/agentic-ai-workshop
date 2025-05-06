@@ -87,12 +87,18 @@ Below is a **two-tier implementation roadmap** reflecting the current agent arch
 2.  **Configuration:**
 *   Add `openai_pricing` section to `config.yaml` with model costs.
 *   Update `agent/config.py` to load pricing and add `get_openai_pricing_config()` getter.
-3.  **Node Integration (Cost Calculation):**
+3.  **Node Integration (Cost Calculation - Refined Approach):**
 *   Modify `agent/nodes/clarifier.py`, `reasoner.py`, `chunk_embed.py`, `summarize.py`, `synthesizer.py`.
-*   Import `get_openai_callback` and `get_openai_pricing_config`.
-*   Wrap LLM/embedding invocations with `get_openai_callback`.
-*   Calculate cost based on token usage and pricing from config.
-*   Update `total_openai_cost` in the state returned by each node.
+*   Import `get_openai_callback` (from `langchain_community.callbacks.manager`) and `get_openai_pricing_config` (from `agent.config`).
+*   **LLM Nodes (`clarifier.py`, `reasoner.py`, `summarize.py`, `synthesizer.py`):**
+    *   Wrap LLM invocations with `get_openai_callback`.
+    *   Calculate cost using `cb.total_cost` from the callback handler (relies on Langchain's internal pricing and handles cached prompt tokens).
+*   **Embedding Node (`chunk_embed.py`):**
+    *   Does not use `get_openai_callback` for cost calculation due to unreliability in capturing embedding token data.
+    *   Manually counts tokens for each document batch using `agent.utils.count_tokens(text, model=embedding_model_name)`.
+    *   Calculates cost for these manually counted tokens using `cost_per_million_tokens` from the `openai_pricing` section of `config.yaml` (via `get_openai_pricing_config`).
+    *   Corrected `TypeError` in `chunk_embed.py` calls to `count_tokens` (changed `model_name=` to `model=`).
+*   All nodes update `total_openai_cost` in the state returned by each node.
 4.  **Agent Runner Update:** Modify `run_agent` in `agent/__init__.py` to initialize `total_openai_cost` in `AgentState` and return it.
 5.  **Display Cost:** Update `main.py` to receive and print the `total_openai_cost`.
 6.  **Commit:** "Implement OpenAI API cost tracking and display."
