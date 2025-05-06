@@ -21,6 +21,7 @@ Create a runnable Python project demonstrating a research agent pipeline:
 *   Includes an interactive clarification step using LangChain components.
 *   Clear modularity using LangGraph nodes.
 *   Low barrier to entry: one script, clearly segmented modules, `.env` / `config.yaml` driven config.
+*   **Provides estimated cost tracking for OpenAI API calls.**
 
 ---
 
@@ -88,12 +89,12 @@ RAG_DOC_PATH=./my_docs    # optional, currently unused by main loop
         *   `-> fetch_node` (`agent/nodes/fetch.py`): Fetches content from `url_to_fetch` using `fetch_url` tool. Updates `fetched_docs` and `seen_urls`. -> `chunk_and_embed_node`.
         *   `-> retrieve_relevant_chunks_node` (`agent/nodes/retrieve.py`): Queries `session_vector_store` based on `query_for_retrieval`. Updates `retrieved_chunks`. -> `summarize_chunks_node`.
         *   `-> consolidate_notes_node` (`agent/nodes/consolidate.py`): If reasoner decides CONSOLIDATE or STOP. Re-ranks `notes` using cross-encoder. Updates `combined_context` with curated notes. -> `synthesize_node`.
-    *   **Node:** `chunk_and_embed_node` (`agent/nodes/chunk_embed.py`): Takes `fetched_docs`, chunks/embeds content, adds to `session_vector_store`. Clears `fetched_docs`, preserves `query_for_retrieval`. -> `retrieve_relevant_chunks_node` (if query exists).
-    *   **Node:** `summarize_chunks_node` (`agent/nodes/summarize.py`): Takes `retrieved_chunks`, uses small LLM to generate a note with detailed embedded citations. Appends to `notes`. Clears `retrieved_chunks`. -> `reason_node`.
-    *   **Node:** `synthesize_node` (`agent/nodes/synthesizer.py`): Takes `combined_context` (curated notes), generates final answer using LLM, preserving detailed citations. Performs post-processing to create numbered reference list. Updates `final_answer`. -> `END`.
+    *   **Node:** `chunk_and_embed_node` (`agent/nodes/chunk_embed.py`): Takes `fetched_docs`, chunks/embeds content, adds to `session_vector_store`. Clears `fetched_docs`, preserves `query_for_retrieval`. Updates `total_openai_cost`. -> `retrieve_relevant_chunks_node` (if query exists).
+    *   **Node:** `summarize_chunks_node` (`agent/nodes/summarize.py`): Takes `retrieved_chunks`, uses small LLM to generate a note with detailed embedded citations. Appends to `notes`. Clears `retrieved_chunks`. Updates `total_openai_cost`. -> `reason_node`.
+    *   **Node:** `synthesize_node` (`agent/nodes/synthesizer.py`): Takes `combined_context` (curated notes), generates final answer using LLM, preserving detailed citations. Performs post-processing to create numbered reference list. Updates `final_answer`. Updates `total_openai_cost`. -> `END`.
     *   **Error Handling:** Any node can route to `error_handler` on failure. -> `END`.
-4.  **`agent.run_agent()`:** Extracts `final_answer` from the final state. (Source URLs are now embedded in the answer's reference list).
-5.  **`main.py`:** Prints the final answer.
+4.  **`agent.run_agent()`:** Extracts `final_answer` and `total_openai_cost` from the final state. (Source URLs are now embedded in the answer's reference list).
+5.  **`main.py`:** Prints the final answer and the estimated `total_openai_cost`.
 
 ---
 
@@ -103,8 +104,8 @@ RAG_DOC_PATH=./my_docs    # optional, currently unused by main loop
 *   No license file (private/internal use only).
 *   If API keys are missing, script must fail gracefully with clear message.
 *   All functions must include docstrings specifying I/O expectations.
-*   Configuration managed via `config.yaml` (behavior, models, prompts, thresholds, prompt_logging) and `.env` (secrets). Shared utilities (`agent/utils.py`) handle LLM/embedding initialization and the prompt logging mechanism.
-*   Output verbosity controlled by `--quiet`, default, and `--verbose`. Source display is handled via post-processing in the synthesizer.
+*   Configuration managed via `config.yaml` (behavior, models, prompts, thresholds, prompt_logging, openai_pricing) and `.env` (secrets). Shared utilities (`agent/utils.py`) handle LLM/embedding initialization and the prompt logging mechanism. Cost calculation is integrated into nodes using OpenAI APIs.
+*   Output verbosity controlled by `--quiet`, default, and `--verbose`. Source display is handled via post-processing in the synthesizer. Estimated API cost is displayed.
 *   Prompt logging for LLM interactions is available and configurable via `config.yaml`, saving to a specified JSONL file (e.g., `logs/prompt_logs.jsonl`).
 
 ---
@@ -122,11 +123,12 @@ RAG_DOC_PATH=./my_docs    # optional, currently unused by main loop
 1.  **Project Overview**: Update to describe the deep research loop.
 2.  **Quickstart**: Update dependencies (`requests-html`, `lxml`, `sentence-transformers`).
 3.  **How It Works**: Update diagram + explanation for the new graph flow.
-4.  **Configuration**: Explain `config.yaml` including new sections (`embedding`, `summarizer`, `retriever`, `consolidator`, `graph`, `prompt_logging`).
+4.  **Configuration**: Explain `config.yaml` including new sections (`embedding`, `summarizer`, `retriever`, `consolidator`, `graph`, `prompt_logging`, `openai_pricing`).
 5.  **Customize It**: Explain modifying nodes, prompts in config.
 6.  **RAG Setup**: Mention RAG code exists but is not currently used in the main loop.
 7.  **Verbosity Modes**: Explain `--quiet`, default, and `--verbose`.
-8.  **Future Ideas**: Add RAG as a retrieval option, improve content extraction/cleaning, FastAPI, MCP.
+8.  **Cost Tracking**: Explain the new OpenAI API cost estimation feature and its configuration.
+9.  **Future Ideas**: Add RAG as a retrieval option, improve content extraction/cleaning, FastAPI, MCP.
 
 ---
 
@@ -143,7 +145,8 @@ RAG_DOC_PATH=./my_docs    # optional, currently unused by main loop
 
 *   `python main.py` must run the deep research loop (fetch, chunk, embed, retrieve, summarize, consolidate, synthesize).
 *   The agent must produce answers with formatted citations based on fetched web content.
-*   `pytest` must pass with offline mock (tests need update).
-*   Users should be able to modify prompts/models for different nodes via `config.yaml`.
+*   The agent must display an estimated cost for OpenAI API calls.
+*   `pytest` must pass with offline mock (tests need update, including cost calculation).
+*   Users should be able to modify prompts/models for different nodes via `config.yaml`, and update API pricing.
 
 ---

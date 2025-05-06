@@ -202,9 +202,10 @@ app = workflow.compile()
 
 
 # --- Main run_agent Function ---
-def run_agent(question: str, verbosity_level: int = 1) -> tuple[str, list[str], list[str]]:
+def run_agent(question: str, verbosity_level: int = 1) -> tuple[str, list[str], list[str], float]:
     """
     Main entry point to run the full agent pipeline using LangGraph.
+    Returns the final answer, web source URLs (placeholder), RAG paths (placeholder), and total OpenAI cost.
     """
     is_verbose = verbosity_level == 2
 
@@ -226,6 +227,7 @@ def run_agent(question: str, verbosity_level: int = 1) -> tuple[str, list[str], 
         "combined_context": "", # Will be populated by consolidator
         "final_answer": "Agent pipeline did not complete.",
         "web_source_urls": [], # Will be populated by citation post-processing
+        "total_openai_cost": 0.0, # Initialize cost
         "verbosity_level": verbosity_level,
         "error": None,
         "current_iteration": 0, # Start iteration count
@@ -274,8 +276,9 @@ def run_agent(question: str, verbosity_level: int = 1) -> tuple[str, list[str], 
     # For now, the answer string contains the references.
     web_urls = [] # Placeholder - actual URLs are in the answer's reference list
     rag_paths = [] # RAG not currently integrated into this flow
+    total_cost = final_state.get("total_openai_cost", 0.0)
 
-    return answer, web_urls, rag_paths
+    return answer, web_urls, rag_paths, total_cost
 
 
 # Make the function easily importable

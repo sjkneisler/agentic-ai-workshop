@@ -17,6 +17,7 @@
     - `langchain-openai`: Langchain OpenAI integrations (embeddings, chat models).
     - `langchain-chroma`: Langchain Chroma vector store integration (used for session store).
     - `langchain-text-splitters`: For splitting documents (`chunk_embed_node`). - NEW (or implicitly required)
+    - `langchain` (specifically `langchain_community.callbacks.manager`): Used for `get_openai_callback` to track token usage for cost estimation.
     - `chromadb`: Underlying vector store (used via `langchain-chroma` for session store).
     - `unstructured`: (Dependency for RAG loaders, currently unused by main loop).
     - `tiktoken`: For token counting (used with OpenAI/Langchain).
@@ -34,7 +35,7 @@
 - Clone the repository.
 - Install dependencies: `pip install -r requirements.txt` (includes `requests-html`, `lxml[html_clean]`, `sentence-transformers`, etc.).
 - Configure environment variables by copying `.env.example` to `.env` and filling in API keys (`SERPER_API_KEY`, `OPENAI_API_KEY`).
-- Configure agent behavior by creating/editing `config.yaml` (includes sections for `reasoner`, `embedding`, `summarizer`, `retriever`, `consolidator`, `synthesizer`, `graph` for recursion limit, and `prompt_logging`). - UPDATED
+- Configure agent behavior by creating/editing `config.yaml` (includes sections for `reasoner`, `embedding`, `summarizer`, `retriever`, `consolidator`, `synthesizer`, `graph` for recursion limit, `prompt_logging`, and `openai_pricing`). - UPDATED
 - Optionally, specify `RAG_DOC_PATH` in `.env` (currently unused by main loop).
 
 ## Technical Constraints

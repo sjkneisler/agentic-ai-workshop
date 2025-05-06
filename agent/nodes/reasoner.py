@@ -11,11 +11,19 @@ from langchain_core.messages import SystemMessage, HumanMessage
 # Shared Utilities (Logging, LLM Init)
 from agent.utils import print_verbose, initialize_llm, log_prompt_data # Use absolute import
 
+# Langchain callbacks for token usage
+try:
+    from langchain_community.callbacks.manager import get_openai_callback
+    LANGCHAIN_CALLBACKS_AVAILABLE = True
+except ImportError:
+    warnings.warn("LangChain callbacks not found. Cost calculation via get_openai_callback will be disabled for reasoner.")
+    LANGCHAIN_CALLBACKS_AVAILABLE = False
+
 # Agent State
 from agent.state import AgentState # Use absolute import
 
 # Config
-from agent.config import get_reasoner_config # Use absolute import
+from agent.config import get_reasoner_config, get_openai_pricing_config # Use absolute import
 
 # --- LangGraph Node ---
 
@@ -28,12 +36,18 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
     """
     is_verbose = state['verbosity_level'] == 2
     # Check for prior errors first
+    current_total_openai_cost = state.get('total_openai_cost', 0.0) # Get existing cost
+
     if state.get("error"):
         if is_verbose: print_verbose("Skipping reasoning due to previous error.", style="yellow")
-        # If there's an error, default to STOP and propagate the error message
-        return {"next_action": "STOP", "error": state.get("error")}
+        # If there's an error, default to STOP and propagate the error message, preserving current cost
+        return {"next_action": "STOP", "error": state.get("error"), "total_openai_cost": current_total_openai_cost}
 
     if is_verbose: print_verbose("Entering Reasoning Node (Decision Maker)", style="magenta")
+
+    # --- Initialize cost for this node's calls ---
+    current_node_call_cost = 0.0
+    pricing_config = get_openai_pricing_config().get('models', {})
 
     # --- Gather context from state ---
     question = state['clarified_question']
@@ -49,7 +63,7 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
     # --- Check stopping condition (Max Iterations) ---
     if current_iteration >= max_iterations:
         if is_verbose: print_verbose(f"Max iterations ({max_iterations}) reached. Moving to consolidate.", style="yellow")
-        return {"next_action": "CONSOLIDATE", "current_iteration": current_iteration} # Keep iteration count
+        return {"next_action": "CONSOLIDATE", "current_iteration": current_iteration, "total_openai_cost": current_total_openai_cost}
 
     # --- Initialize LLM ---
     reasoner_llm = initialize_llm(
@@ -61,7 +75,7 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
     if not reasoner_llm:
         error_msg = "Failed to initialize LLM for Reasoner Node."
         if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
-        return {"error": error_msg, "next_action": "STOP"}
+        return {"error": error_msg, "next_action": "STOP", "total_openai_cost": current_total_openai_cost}
 
     # --- Format Notes and Search Results for Prompt ---
     formatted_notes = "\n".join(f"- {note}" for note in notes) if notes else "No notes gathered yet."
@@ -96,7 +110,7 @@ Possible Next Actions:
 4.  STOP: If the plan seems fulfilled by the notes, or if you are stuck after trying different actions.
 5.  SEARCH: **ONLY as a last resort.** Choose SEARCH if, and only if, **ALL** of the following conditions are met:
     a. There are NO unvisited URLs in 'Recent Search Results' that you deem relevant and promising for any part of the 'Research Plan Outline'.
-    b. You have already considered if \`RETRIEVE_CHUNKS\` could answer the immediate need.
+    b. You have already considered if `RETRIEVE_CHUNKS` could answer the immediate need.
     c. More general information or new starting points are absolutely essential for an uncovered part of the outline.
     Avoid previously attempted queries listed below, or queries that are extremely similar.
 
@@ -149,8 +163,27 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
                 formatted_seen_urls=formatted_seen_urls
             )),
         ]
-        response = reasoner_llm.invoke(messages)
-        decision_text = response.content if hasattr(response, 'content') else str(response)
+        if LANGCHAIN_CALLBACKS_AVAILABLE and reasoner_llm:
+            with get_openai_callback() as cb:
+                response = reasoner_llm.invoke(messages)
+                decision_text = response.content if hasattr(response, 'content') else str(response)
+                
+                prompt_tokens = cb.prompt_tokens
+                completion_tokens = cb.completion_tokens
+                model_name = reasoner_llm.model_name if hasattr(reasoner_llm, 'model_name') else reasoner_config.get('model')
+
+                model_pricing_info = pricing_config.get(model_name)
+                if model_pricing_info:
+                    input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
+                    output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
+                    call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
+                                     (completion_tokens / 1_000_000 * output_cost)
+                    current_node_call_cost += call_cost_iter
+                    if is_verbose: print_verbose(f"Reasoner call cost: ${call_cost_iter:.6f}", style="dim yellow")
+        else:
+            response = reasoner_llm.invoke(messages)
+            decision_text = response.content if hasattr(response, 'content') else str(response)
+            if is_verbose and not LANGCHAIN_CALLBACKS_AVAILABLE: print_verbose("Langchain callbacks unavailable, skipping cost calculation for reasoner.", style="dim yellow")
 
         # Log prompt and response
         log_prompt_data(
@@ -222,7 +255,16 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
 
         # --- Update State based on Decision ---
         # Always update iteration count and the decided next action
-        update_dict = {"next_action": action, "current_iteration": current_iteration + 1}
+        updated_total_openai_cost = current_total_openai_cost + current_node_call_cost
+        update_dict = {
+            "next_action": action,
+            "current_iteration": current_iteration + 1,
+            "total_openai_cost": updated_total_openai_cost # Include updated cost
+        }
+        if is_verbose:
+            print_verbose(f"Reasoner node cost: ${current_node_call_cost:.6f}", style="yellow")
+            print_verbose(f"Total OpenAI cost updated: ${current_total_openai_cost:.6f} -> ${updated_total_openai_cost:.6f}", style="yellow")
+
         # Preserve query_for_retrieval and seen_urls by default unless explicitly changed
         update_dict["query_for_retrieval"] = state.get("query_for_retrieval")
         update_dict["seen_urls"] = seen_urls # Start with the input seen_urls
@@ -274,8 +316,8 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
         error_msg = f"Reasoner LLM invocation or parsing failed: {e}"
         warnings.warn(error_msg)
         if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
-        # Stop on error, include error message in state
-        return {"error": error_msg, "next_action": "STOP", "current_iteration": current_iteration + 1}
+        # Stop on error, include error message in state, preserve cost as it was before this node's attempt
+        return {"error": error_msg, "next_action": "STOP", "current_iteration": current_iteration + 1, "total_openai_cost": current_total_openai_cost}
 
 # Comments moved inside the function or removed if obsolete
 # Need to add 'current_iteration' to AgentState (if not already done) - This should be done in agent/state.py

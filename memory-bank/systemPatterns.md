@@ -22,6 +22,7 @@ Below is a **two-tier implementation roadmap** reflecting the current agent arch
 | **10**  | *README & Docs*                              | Populate README reflecting new architecture. Update Memory Bank (this process).                                                       | ⏳     |
 | **11**  | *Polish Pass*                                | Verify `.env.example`, `config.yaml`, print-styles, error messages, requirements pinning.                                             | ⏳     |
 | **12**  | *Prompt Logging System*                      | Implement configurable logging for LLM prompts and responses to aid debugging and analysis.                                             | ✅     |
+| **13**  | *OpenAI API Cost Tracking*                   | Implement tracking and display of estimated OpenAI API costs per run.                                                                 | ✅     |
 
 ---
 
@@ -79,6 +80,22 @@ Below is a **two-tier implementation roadmap** reflecting the current agent arch
 *   Resolve `NameError: name 'Dict' is not defined` in `agent/utils.py` by importing `Dict` from `typing`.
 *   Resolve `AttributeError: 'ChatOpenAI' object has no attribute 'model'` in `agent/nodes/clarifier.py` by using `model_name` for LangChain objects.
 5.  **Commit:** "Implement prompt logging system for LLM interactions."
+
+### **Chunk 13 – OpenAI API Cost Tracking** (✅)
+
+1.  **State Update:** Add `total_openai_cost: float` to `AgentState` in `agent/state.py`.
+2.  **Configuration:**
+*   Add `openai_pricing` section to `config.yaml` with model costs.
+*   Update `agent/config.py` to load pricing and add `get_openai_pricing_config()` getter.
+3.  **Node Integration (Cost Calculation):**
+*   Modify `agent/nodes/clarifier.py`, `reasoner.py`, `chunk_embed.py`, `summarize.py`, `synthesizer.py`.
+*   Import `get_openai_callback` and `get_openai_pricing_config`.
+*   Wrap LLM/embedding invocations with `get_openai_callback`.
+*   Calculate cost based on token usage and pricing from config.
+*   Update `total_openai_cost` in the state returned by each node.
+4.  **Agent Runner Update:** Modify `run_agent` in `agent/__init__.py` to initialize `total_openai_cost` in `AgentState` and return it.
+5.  **Display Cost:** Update `main.py` to receive and print the `total_openai_cost`.
+6.  **Commit:** "Implement OpenAI API cost tracking and display."
 
 ---
 

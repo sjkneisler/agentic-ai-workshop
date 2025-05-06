@@ -83,6 +83,25 @@ Argument: [Your search query | URL to fetch | Your vector store query | None]
     'prompt_logging': { # Configuration for prompt logging
         'enabled': False, # Set to True to enable prompt logging
         'log_file_path': "logs/prompt_logs.jsonl" # Path to save prompt logs
+    },
+    'openai_pricing': { # Default OpenAI API pricing
+        'models': {
+            "gpt-o4-mini": {
+                "input_cost_per_million_tokens": 0.15,
+                "output_cost_per_million_tokens": 0.60
+            },
+            "gpt-4-turbo": {
+                "input_cost_per_million_tokens": 10.00,
+                "output_cost_per_million_tokens": 30.00
+            },
+            "text-embedding-3-small": {
+                "cost_per_million_tokens": 0.02
+            },
+            "text-embedding-ada-002": {
+                "cost_per_million_tokens": 0.10
+            }
+        }
+        # 'default_model_for_pricing': "gpt-4o-mini" # Optional: if you want a fallback
     }
 }
 
@@ -158,3 +177,7 @@ def get_graph_config() -> Dict[str, Any]:
 def get_prompt_logging_config() -> Dict[str, Any]:
     """Returns the configuration for prompt logging."""
     return CONFIG.get('prompt_logging', DEFAULT_CONFIG['prompt_logging'])
+
+def get_openai_pricing_config() -> Dict[str, Any]:
+    """Returns the OpenAI API pricing configuration."""
+    return CONFIG.get('openai_pricing', DEFAULT_CONFIG['openai_pricing'])

@@ -6,7 +6,15 @@ from typing import Dict, Any, List, Optional
 
 # State and Config
 from agent.state import AgentState
-from agent.config import get_embedding_config # Assuming config for embedding model exists
+from agent.config import get_embedding_config, get_openai_pricing_config # Assuming config for embedding model exists
+
+# Langchain callbacks for token usage
+try:
+    from langchain_community.callbacks.manager import get_openai_callback
+    LANGCHAIN_CALLBACKS_AVAILABLE = True
+except ImportError:
+    warnings.warn("LangChain callbacks not found. Cost calculation via get_openai_callback will be disabled for chunk_embed.")
+    LANGCHAIN_CALLBACKS_AVAILABLE = False
 
 # LangChain components
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -62,27 +70,35 @@ def chunk_and_embed_node(state: AgentState) -> Dict[str, Any]:
     Initializes the vector store if it doesn't exist.
     """
     is_verbose = state['verbosity_level'] == 2
+    current_total_openai_cost = state.get('total_openai_cost', 0.0) # Get existing cost
+
     if state.get("error"):
         if is_verbose: print_verbose("Skipping chunk/embed due to previous error.", style="yellow")
-        return {}
+        return {"total_openai_cost": current_total_openai_cost} # Preserve cost
     
     if is_verbose: print_verbose("Entering Chunk & Embed Node", style="magenta")
+
+    current_node_call_cost = 0.0
+    pricing_config = get_openai_pricing_config().get('models', {})
 
     fetched_docs = state.get('fetched_docs', [])
     if not fetched_docs:
         if is_verbose: print_verbose("No fetched documents to chunk and embed.", style="dim blue")
-        return {} # Nothing to do
+        return {"total_openai_cost": current_total_openai_cost} # Nothing to do, preserve cost
 
     # 1. Initialize Embeddings and Vector Store (if needed)
     embedding_function = _get_embedding_function()
     if not embedding_function:
-        return {"error": "Failed to initialize embedding function."}
+        return {"error": "Failed to initialize embedding function.", "total_openai_cost": current_total_openai_cost}
+    
+    embedding_model_name = embedding_function.model if hasattr(embedding_function, 'model') else get_embedding_config().get('model', 'text-embedding-3-small')
+
 
     vector_store = state.get('session_vector_store')
     if not vector_store:
         vector_store = _initialize_session_store(embedding_function)
         if not vector_store:
-            return {"error": "Failed to initialize session vector store."}
+            return {"error": "Failed to initialize session vector store.", "total_openai_cost": current_total_openai_cost}
         if is_verbose: print_verbose("Initialized new session vector store.", style="dim blue")
     elif is_verbose:
          print_verbose("Using existing session vector store.", style="dim blue")
@@ -160,7 +176,20 @@ def chunk_and_embed_node(state: AgentState) -> Dict[str, Any]:
                 # Process the current batch before adding the new chunk
                 if is_verbose: print_verbose(f"  Adding batch of {len(current_batch)} chunks ({current_batch_tokens} tokens)...", style="dim blue")
                 try:
-                    vector_store.add_documents(current_batch)
+                    if LANGCHAIN_CALLBACKS_AVAILABLE:
+                        with get_openai_callback() as cb:
+                            vector_store.add_documents(current_batch)
+                            total_tokens_cb = cb.total_tokens
+                            model_pricing_info = pricing_config.get(embedding_model_name)
+                            if model_pricing_info:
+                                cost_pm = model_pricing_info.get('cost_per_million_tokens', 0)
+                                batch_cost_iter = (total_tokens_cb / 1_000_000) * cost_pm
+                                current_node_call_cost += batch_cost_iter
+                                if is_verbose: print_verbose(f"    Embedding batch cost: ${batch_cost_iter:.6f} ({total_tokens_cb} tokens)", style="dim yellow")
+                    else:
+                        vector_store.add_documents(current_batch)
+                        if is_verbose: print_verbose("    Langchain callbacks unavailable, skipping cost calculation for this embedding batch.", style="dim yellow")
+                    
                     total_added_count += len(current_batch)
                     if is_verbose: print_verbose(f"  Batch added successfully. Total added: {total_added_count}", style="green")
                 except Exception as e:
@@ -168,7 +197,7 @@ def chunk_and_embed_node(state: AgentState) -> Dict[str, Any]:
                     warnings.warn(error_msg)
                     if is_verbose: print_verbose(f"  Error adding batch: {e}", style="bold red")
                     # Optionally return error here, or just warn and continue? Let's warn and continue for now.
-                    # return {"error": error_msg, "session_vector_store": vector_store}
+                    # return {"error": error_msg, "session_vector_store": vector_store, "total_openai_cost": current_total_openai_cost + current_node_call_cost}
 
                 # Start a new batch
                 current_batch = [chunk_doc]
@@ -182,17 +211,35 @@ def chunk_and_embed_node(state: AgentState) -> Dict[str, Any]:
             if i == len(all_chunks_to_add) - 1 and current_batch:
                  if is_verbose: print_verbose(f"  Adding final batch of {len(current_batch)} chunks ({current_batch_tokens} tokens)...", style="dim blue")
                  try:
-                     vector_store.add_documents(current_batch)
-                     total_added_count += len(current_batch)
-                     if is_verbose: print_verbose(f"  Final batch added successfully. Total added: {total_added_count}", style="green")
+                    if LANGCHAIN_CALLBACKS_AVAILABLE:
+                        with get_openai_callback() as cb:
+                            vector_store.add_documents(current_batch)
+                            total_tokens_cb = cb.total_tokens
+                            model_pricing_info = pricing_config.get(embedding_model_name)
+                            if model_pricing_info:
+                                cost_pm = model_pricing_info.get('cost_per_million_tokens', 0)
+                                batch_cost_iter = (total_tokens_cb / 1_000_000) * cost_pm
+                                current_node_call_cost += batch_cost_iter
+                                if is_verbose: print_verbose(f"    Embedding final batch cost: ${batch_cost_iter:.6f} ({total_tokens_cb} tokens)", style="dim yellow")
+                    else:
+                        vector_store.add_documents(current_batch)
+                        if is_verbose: print_verbose("    Langchain callbacks unavailable, skipping cost calculation for this embedding batch.", style="dim yellow")
+
+                    total_added_count += len(current_batch)
+                    if is_verbose: print_verbose(f"  Final batch added successfully. Total added: {total_added_count}", style="green")
                  except Exception as e:
                      error_msg = f"Failed to add final batch ({len(current_batch)} docs) to session vector store: {e}"
                      warnings.warn(error_msg)
                      if is_verbose: print_verbose(f"  Error adding final batch: {e}", style="bold red")
                      # Optionally return error here
-                     # return {"error": error_msg, "session_vector_store": vector_store}
+                     # return {"error": error_msg, "session_vector_store": vector_store, "total_openai_cost": current_total_openai_cost + current_node_call_cost}
 
         # Original error handling block removed as batching handles errors internally now.
+    
+    updated_total_openai_cost = current_total_openai_cost + current_node_call_cost
+    if is_verbose:
+        print_verbose(f"Chunk/Embed node cost: ${current_node_call_cost:.6f}", style="yellow")
+        print_verbose(f"Total OpenAI cost updated: ${current_total_openai_cost:.6f} -> ${updated_total_openai_cost:.6f}", style="yellow")
 
     # 5. Update state: Store the vector_store, clear fetched_docs, PRESERVE query_for_retrieval
     # Note: We modify the store in place, but need to ensure the state dict reflects it.
@@ -201,6 +248,7 @@ def chunk_and_embed_node(state: AgentState) -> Dict[str, Any]:
         "session_vector_store": vector_store,
         "fetched_docs": [], # Clear the processed docs
         "query_for_retrieval": state.get("query_for_retrieval"), # Preserve the retrieval query
+        "total_openai_cost": updated_total_openai_cost, # Include updated cost
         "error": None
     }
 

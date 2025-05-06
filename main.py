@@ -95,8 +95,8 @@ def main():
 
     try:
         # Pass the verbosity level to the agent runner
-        # run_agent now returns (final_answer, web_source_urls, rag_source_paths)
-        final_answer, web_source_urls, rag_source_paths = agent.run_agent(question, verbosity_level=args.verbosity_level)
+        # run_agent now returns (final_answer, web_source_urls, rag_source_paths, total_openai_cost)
+        final_answer, web_source_urls, rag_source_paths, total_openai_cost = agent.run_agent(question, verbosity_level=args.verbosity_level)
 
         # --- Print Web Source URLs (Default & Verbose only) ---
         if args.verbosity_level >= 1 and web_source_urls:
@@ -110,6 +110,10 @@ def main():
 
         # --- Print Final Answer Panel (All modes) ---
         (rich_print(Panel(final_answer, title="Final Answer", border_style="green", title_align="left")) if RICH_AVAILABLE else print(f"\n--- Final Answer ---\n{final_answer}"))
+
+        # --- Print Estimated Cost (All modes) ---
+        cost_message = f"Estimated OpenAI API Cost: ${total_openai_cost:.4f}"
+        (rich_print(Panel(cost_message, title="Cost Estimation", border_style="blue", title_align="left")) if RICH_AVAILABLE else print(f"\n--- Cost Estimation ---\n{cost_message}"))
 
     except NotImplementedError:
          # Always print this error

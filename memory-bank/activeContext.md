@@ -4,27 +4,39 @@
 
 The primary focus is on **Enhancing Agent Observability and Efficiency**.
 Current efforts are focused on:
-- Implementing **Prompt Logging** (Complete for core LLM nodes). This allows for better debugging, analysis of LLM interactions, and data collection.
-- Preparing for the implementation of **Persistent Website Caching** with ChromaDB and a Time-To-Live (TTL) mechanism to avoid redundant web fetches and indexing.
+- Implementing **Prompt Logging** (Complete for core LLM nodes).
+- Implementing **OpenAI API Cost Tracking** (Complete for core LLM & embedding nodes). This provides an estimated cost for each agent run.
+- Preparing for the implementation of **Persistent Website Caching**.
 - Ongoing **Testing and Refinement** of the Deep Research Loop architecture.
 
 ## Recent Changes
 
-**Prompt Logging Implementation (This Session):**
+**OpenAI API Cost Tracking (This Session):**
+- **State:** Added `total_openai_cost: float` to `AgentState` in `agent/state.py`.
 - **Configuration:**
-    - Added a `prompt_logging` section to `config.yaml` with `enabled` and `log_file_path` options.
-    - Updated `agent/config.py` with `prompt_logging` in `DEFAULT_CONFIG` and a `get_prompt_logging_config()` getter.
+- Added `openai_pricing` section to `config.yaml` with model costs.
+- Updated `agent/config.py` to load pricing and add `get_openai_pricing_config()` getter.
+- **Node Integration (Cost Calculation):**
+- Modified `agent/nodes/clarifier.py`, `reasoner.py`, `chunk_embed.py`, `summarize.py`, `synthesizer.py`.
+- Imported `get_openai_callback` from `langchain_community.callbacks.manager`.
+- Wrapped LLM/embedding invocations with `get_openai_callback` to capture token usage.
+- Calculated cost based on token usage and pricing from config.
+- Updated `total_openai_cost` in the state returned by each node.
+- **Agent Runner & Display:**
+- Modified `run_agent` in `agent/__init__.py` to initialize and return `total_openai_cost`.
+- Updated `main.py` to receive and print the `total_openai_cost`.
+
+**Prompt Logging Implementation (Previous Part of This Session):**
+- **Configuration:**
+- Added a `prompt_logging` section to `config.yaml`.
+- Updated `agent/config.py` for prompt logging.
 - **Utility:**
-    - Created `log_prompt_data` function in `agent/utils.py` to handle writing timestamped prompt, response, and metadata to a JSONL file.
+- Created `log_prompt_data` function in `agent/utils.py`.
 - **Node Integration:**
-    - Integrated `log_prompt_data` into the following LLM-interacting nodes:
-        - `agent/nodes/clarifier.py` (for both clarification check and refinement/outline generation calls)
-        - `agent/nodes/reasoner.py` (for the decision-making call)
-        - `agent/nodes/summarize.py` (for the summarization call)
-        - `agent/nodes/synthesizer.py` (for the final answer synthesis call)
-- **Bug Fixes during Logging Implementation:**
-    - Resolved `NameError: name 'Dict' is not defined` in `agent/utils.py` by adding `Dict` to `typing` imports.
-    - Resolved `AttributeError: 'ChatOpenAI' object has no attribute 'model'` in `agent/nodes/clarifier.py` by correcting access to `model_name` and `temperature` on LangChain LLM objects for logging.
+- Integrated `log_prompt_data` into `clarifier.py`, `reasoner.py`, `summarize.py`, `synthesizer.py`.
+- **Bug Fixes:**
+- Resolved `NameError: name 'Dict' is not defined` in `agent/utils.py`.
+- Resolved `AttributeError: 'ChatOpenAI' object has no attribute 'model'` in `agent/nodes/clarifier.py`.
 
 **(Previous Session: Deep Research Loop Implementation & Debugging)**
 - **Initial Implementation:**
@@ -56,45 +68,45 @@ Current efforts are focused on:
 
 ## Next Steps
 
-1.  **Implement Persistent Website Caching:**
+1.  **Verify OpenAI API Cost Tracking:**
+    *   Run the agent with various queries (`python3 main.py "..."`).
+    *   Confirm that an estimated cost is displayed.
+    *   Manually check a few LLM/embedding calls against OpenAI pricing to ensure rough accuracy (requires inspecting logs or verbose output if token counts are printed).
+2.  **Implement Persistent Website Caching:**
     *   Upgrade `session_vector_store` (ChromaDB) to be persistent.
-    *   Implement a TTL mechanism, potentially using SQLite to track URL indexing timestamps.
-    *   Modify `reasoner_node` to consider these timestamps.
-    *   Update `chunk_embed_node` to record successful indexing timestamps.
+    *   Implement a TTL mechanism.
+    *   Modify `reasoner_node` and `chunk_embed_node`.
     *   Make ChromaDB path and TTL configurable.
-2.  **Verify Prompt Logging:**
-    *   Run the agent with logging enabled (`config.yaml`).
-    *   Inspect the generated log file (`logs/prompt_logs.jsonl` by default) to ensure correct format and content.
-3.  **Verify Deep Research Loop Fixes (If not already confirmed):**
-    *   Run the agent again (`python3 main.py "..." --verbose`) to confirm:
-        *   `search_results` persist.
-        *   Agent attempts different URLs if first is seen.
-        *   Flow correctly proceeds `Embed -> Retrieve -> Summarize`.
-4.  **Refine Reasoner (If Needed):** If suboptimal choices persist.
-5.  **Run/Update Automated Tests:**
-    *   Execute `python3 -m pytest`. Tests will need significant updates for new architecture, state variables, and new features like logging and caching.
-6.  **Update README & Docs:**
-    *   Reflect prompt logging feature.
+3.  **Verify Prompt Logging (If not already confirmed):**
+    *   Run the agent with logging enabled.
+    *   Inspect `logs/prompt_logs.jsonl`.
+4.  **Verify Deep Research Loop Fixes (If not already confirmed):**
+    *   Run the agent again (`python3 main.py "..." --verbose`).
+5.  **Refine Reasoner (If Needed).**
+6.  **Run/Update Automated Tests:**
+    *   Execute `python3 -m pytest`. Tests will need updates for new features like cost tracking and upcoming caching.
+7.  **Update README & Docs:**
+    *   Reflect prompt logging and API cost tracking features.
     *   Reflect persistent caching feature (once implemented).
-    *   Ensure README reflects corrected flow, state variables, and configuration options.
-7.  **Polish Pass:**
+8.  **Polish Pass:**
     *   Pin requirements, validate all configs, review outputs, address TODOs.
 
 ## Active Decisions & Considerations
 
 - **Agent Architecture:** Confirmed as explicit "Deep Research Loop" graph. Flow corrected to `Embed -> Retrieve -> Summarize -> Reasoner`.
-- **Observability:** Implemented prompt logging to `agent/utils.py` and integrated into core LLM nodes (`clarifier`, `reasoner`, `summarizer`, `synthesizer`) for better insight into LLM interactions. Configurable via `config.yaml`.
-- **Reasoner:** Remains central decision-maker. Prompt strengthened to handle `seen_urls` and persistent `search_results`.
+- **Observability:**
+    - Implemented prompt logging to `agent/utils.py` and integrated into core LLM nodes. Configurable via `config.yaml`.
+    - Implemented OpenAI API cost tracking, integrated into LLM/embedding nodes, and displayed in `main.py`. Configurable pricing in `config.yaml`.
+- **Reasoner:** Remains central decision-maker.
 - **State Management:**
-    - Introduced `query_for_retrieval` to pass the correct context from Search to Retrieve.
-    - Introduced `seen_urls` to prevent redundant fetches.
-    - Modified `reasoner.py` to persist `search_results` across iterations until consolidation/stop.
-- **Content Handling:** Fetch -> Chunk/Batch Embed -> Retrieve -> Summarize flow implemented. Batching added to embedding for large documents.
-- **Vector Store:** Currently ephemeral in-memory Chroma per run. Next step is to make this persistent with TTL.
-- **Summarization/Consolidation/Source Tracking:** No changes in this session beyond integrating prompt logging.
+    - Added `total_openai_cost` to `AgentState`.
+    - `query_for_retrieval` and `seen_urls` are managed.
+    - `reasoner.py` persists `search_results`.
+- **Content Handling:** Fetch -> Chunk/Batch Embed -> Retrieve -> Summarize flow implemented.
+- **Vector Store:** Currently ephemeral.
+- **Summarization/Consolidation/Source Tracking:** No changes beyond integrating prompt/cost logging.
 - **Configuration/File Structure:**
-    - Added `graph` section to `config.yaml` and `agent/config.py` for `recursion_limit`.
-    - Added `prompt_logging` section to `config.yaml` and `agent/config.py`.
+    - Added `graph` and `prompt_logging` sections to `config.yaml` and `agent/config.py`.
+    - Added `openai_pricing` section to `config.yaml` and `agent/config.py`.
     - Added `log_prompt_data` utility to `agent/utils.py`.
-    - Fetch tool (`agent/tools/fetch.py`) import corrected in previous session.
-- **Testing:** Still requires significant updates. Prompt logging and upcoming caching will require new test considerations.
+- **Testing:** Requires updates for cost tracking and upcoming caching.

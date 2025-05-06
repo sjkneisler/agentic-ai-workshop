@@ -26,6 +26,7 @@ class AgentState(TypedDict):
     # Final outputs
     combined_context: str # Context passed to synthesizer (might become curated_notes)
     final_answer: str
+    total_openai_cost: float = 0.0 # Estimated cost of OpenAI API calls for the run
     web_source_urls: List[str] # URLs from search/fetch (needs careful tracking)
 
     # Control/Meta fields

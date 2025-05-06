@@ -116,11 +116,23 @@
 
 ---
 
+#### ✅ Chunk 13 – OpenAI API Cost Tracking
+*   ✅ Add `total_openai_cost` to `agent/state.py`.
+*   ✅ Add `openai_pricing` section to `config.yaml`.
+*   ✅ Update `agent/config.py` to load pricing and add getter.
+*   ✅ Integrate cost calculation into `clarifier`, `reasoner`, `chunk_embed`, `summarize`, `synthesizer` nodes.
+*   ✅ Update `agent/__init__.py` for `run_agent` to return total cost.
+*   ✅ Update `main.py` to display estimated cost.
+*   ✅ Commit: **"Implement OpenAI API cost tracking and display."**
+
+---
+
 **Done?** The repo should:
 
 *   run `python main.py` with the new deep research loop flow,
 *   produce answers with formatted citations based on fetched web content,
-*   pass `pytest` offline (tests need update),
+*   display an estimated cost for OpenAI API calls,
+*   pass `pytest` offline (tests need update for cost tracking),
 *   and let users tweak config or modules.
 
 ---

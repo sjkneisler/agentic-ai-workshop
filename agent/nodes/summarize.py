@@ -6,7 +6,15 @@ from typing import Dict, Any, List
 
 # State and Config
 from agent.state import AgentState
-from agent.config import get_summarizer_config # Need to add this to config.py
+from agent.config import get_summarizer_config, get_openai_pricing_config # Need to add this to config.py
+
+# Langchain callbacks for token usage
+try:
+    from langchain_community.callbacks.manager import get_openai_callback
+    LANGCHAIN_CALLBACKS_AVAILABLE = True
+except ImportError:
+    warnings.warn("LangChain callbacks not found. Cost calculation via get_openai_callback will be disabled for summarize.")
+    LANGCHAIN_CALLBACKS_AVAILABLE = False
 
 # LangChain components
 from langchain_core.documents import Document
@@ -23,16 +31,21 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
     into a concise note with embedded source citations and appends it to state['notes'].
     """
     is_verbose = state['verbosity_level'] == 2
+    current_total_openai_cost = state.get('total_openai_cost', 0.0) # Get existing cost
+
     if state.get("error"):
         if is_verbose: print_verbose("Skipping summarization due to previous error.", style="yellow")
-        return {}
+        return {"total_openai_cost": current_total_openai_cost} # Preserve cost
 
     if is_verbose: print_verbose("Entering Summarize Chunks Node", style="magenta")
+    
+    current_node_call_cost = 0.0
+    pricing_config = get_openai_pricing_config().get('models', {})
 
     retrieved_chunks: List[Document] = state.get('retrieved_chunks', [])
     if not retrieved_chunks:
         if is_verbose: print_verbose("No retrieved chunks to summarize.", style="dim blue")
-        return {"retrieved_chunks": []} # Clear field, nothing to do
+        return {"retrieved_chunks": [], "total_openai_cost": current_total_openai_cost} # Clear field, nothing to do
 
     # 1. Initialize Summarizer LLM
     summarizer_config = get_summarizer_config()
@@ -46,7 +59,7 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
     if not summarizer_llm:
         error_msg = "Failed to initialize LLM for Summarizer Node."
         if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
-        return {"error": error_msg, "retrieved_chunks": []}
+        return {"error": error_msg, "retrieved_chunks": [], "total_openai_cost": current_total_openai_cost}
 
     # 2. Format Chunks and Prompt with Detailed Citations
     formatted_chunks = ""
@@ -80,8 +93,27 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
         ]
-        response = summarizer_llm.invoke(messages)
-        summary_note = response.content if hasattr(response, 'content') else str(response)
+        if LANGCHAIN_CALLBACKS_AVAILABLE and summarizer_llm:
+            with get_openai_callback() as cb:
+                response = summarizer_llm.invoke(messages)
+                summary_note = response.content if hasattr(response, 'content') else str(response)
+                
+                prompt_tokens = cb.prompt_tokens
+                completion_tokens = cb.completion_tokens
+                model_name = summarizer_llm.model_name if hasattr(summarizer_llm, 'model_name') else summarizer_config.get('model')
+
+                model_pricing_info = pricing_config.get(model_name)
+                if model_pricing_info:
+                    input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
+                    output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
+                    call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
+                                     (completion_tokens / 1_000_000 * output_cost)
+                    current_node_call_cost += call_cost_iter
+                    if is_verbose: print_verbose(f"Summarizer call cost: ${call_cost_iter:.6f}", style="dim yellow")
+        else:
+            response = summarizer_llm.invoke(messages)
+            summary_note = response.content if hasattr(response, 'content') else str(response)
+            if is_verbose and not LANGCHAIN_CALLBACKS_AVAILABLE: print_verbose("Langchain callbacks unavailable, skipping cost calculation for summarizer.", style="dim yellow")
 
         # Log prompt and response
         log_prompt_data(
@@ -106,9 +138,15 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
         current_notes = state.get('notes', [])
         current_notes.append(summary_note.strip())
 
+        updated_total_openai_cost = current_total_openai_cost + current_node_call_cost
+        if is_verbose:
+            print_verbose(f"Summarizer node cost: ${current_node_call_cost:.6f}", style="yellow")
+            print_verbose(f"Total OpenAI cost updated: ${current_total_openai_cost:.6f} -> ${updated_total_openai_cost:.6f}", style="yellow")
+
         return {
             "notes": current_notes,
             "retrieved_chunks": [], # Clear processed chunks
+            "total_openai_cost": updated_total_openai_cost, # Include updated cost
             "error": None
         }
 
@@ -116,7 +154,7 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
         error_msg = f"Summarizer LLM invocation failed: {e}"
         warnings.warn(error_msg)
         if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
-        return {"error": error_msg, "retrieved_chunks": []}
+        return {"error": error_msg, "retrieved_chunks": [], "total_openai_cost": current_total_openai_cost}
 
 # Example config remains the same
 # summarizer:

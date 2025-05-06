@@ -1,7 +1,7 @@
 import os
 import warnings
 import json
-from typing import List, Dict, Any, Optional, Tuple # Added Tuple
+from typing import List, Dict, Any, Optional, Tuple
 
 # LangChain components
 try:
@@ -14,10 +14,19 @@ except ImportError:
     warnings.warn("LangChain components (langchain-core) not found. LLM clarification disabled.")
     LANGCHAIN_AVAILABLE = False
 
+# Langchain callbacks for token usage
+try:
+    from langchain_community.callbacks.manager import get_openai_callback
+    LANGCHAIN_CALLBACKS_AVAILABLE = True
+except ImportError:
+    warnings.warn("LangChain callbacks not found. Cost calculation via get_openai_callback will be disabled.")
+    LANGCHAIN_CALLBACKS_AVAILABLE = False
+
+
 # Shared Utilities (Logging, LLM Init)
 # Import initialize_llm as well
 from agent.utils import print_verbose, RICH_AVAILABLE, Panel, rich_print, initialize_llm, log_prompt_data # Use absolute import
-from agent.config import get_clarifier_config # Use absolute import
+from agent.config import get_clarifier_config, get_openai_pricing_config # Use absolute import
 
 # --- Pydantic Model for JSON Output ---
 
@@ -104,16 +113,21 @@ Respond ONLY with a JSON object matching the following schema:
 
 # --- Main Clarifier Function ---
 
-def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
+def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, float]:
     """
-    Clarifies the user's question using LangChain if needed and generates a plan outline.
+    Clarifies the user's question using LangChain if needed, generates a plan outline,
+    and calculates the cost of LLM calls made.
 
     Returns:
         A tuple containing:
             - refined_question (str): The clarified question (or original if no clarification).
             - plan_outline (str): The generated Markdown outline (or a default if generation fails).
+            - cost (float): The estimated cost of OpenAI API calls made during clarification.
     """
     default_outline = f"# Research Plan: {question}\n\n## Overview\n\n## Key Aspects\n\n## Conclusion"
+    current_call_cost = 0.0
+    pricing_config = get_openai_pricing_config().get('models', {})
+
     if verbose:
         print_verbose(f"Original question: [cyan]'{question}'[/cyan]", title="Clarifying Question", style="magenta")
 
@@ -121,17 +135,40 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
 
     if not lc_initialized or not json_parser or not refinement_json_parser:
         if verbose: print_verbose("LLM clarification/planning skipped (LangChain components failed to initialize, OpenAI key missing, or parsers unavailable).", style="yellow")
-        return question, default_outline
+        return question, default_outline, current_call_cost
 
     # --- LangChain Call 1: Check if clarification is needed ---
     if verbose: print_verbose("Asking LLM (via LangChain) if clarification is needed...", style="dim blue")
 
     try:
         json_schema_instructions = json_parser.get_format_instructions()
-        clarification_info: Dict = clarification_check_chain.invoke({
-            "question": question,
-            "json_schema": json_schema_instructions
-        })
+        clarification_llm_instance = clarification_check_chain.steps[1] if hasattr(clarification_check_chain, 'steps') and len(clarification_check_chain.steps) > 1 else None
+
+        if LANGCHAIN_CALLBACKS_AVAILABLE and clarification_llm_instance:
+            with get_openai_callback() as cb:
+                clarification_info: Dict = clarification_check_chain.invoke({
+                    "question": question,
+                    "json_schema": json_schema_instructions
+                })
+                prompt_tokens = cb.prompt_tokens
+                completion_tokens = cb.completion_tokens
+                model_name = clarification_llm_instance.model_name
+                
+                model_pricing_info = pricing_config.get(model_name)
+                if model_pricing_info:
+                    input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
+                    output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
+                    call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
+                                     (completion_tokens / 1_000_000 * output_cost)
+                    current_call_cost += call_cost_iter
+                    if verbose: print_verbose(f"Clarification check call cost: ${call_cost_iter:.6f}", style="dim yellow")
+        else:
+            clarification_info: Dict = clarification_check_chain.invoke({
+                "question": question,
+                "json_schema": json_schema_instructions
+            })
+            if verbose and not LANGCHAIN_CALLBACKS_AVAILABLE: print_verbose("Langchain callbacks unavailable, skipping cost calculation for clarification check.", style="dim yellow")
+
 
         # Log clarification check
         log_prompt_data(
@@ -139,8 +176,8 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
             prompt={"question": question, "json_schema": json_schema_instructions},
             response=json.dumps(clarification_info), # Log the parsed JSON output
             additional_info={
-                "model": clarification_check_chain.steps[1].model_name if hasattr(clarification_check_chain, 'steps') and len(clarification_check_chain.steps) > 1 and hasattr(clarification_check_chain.steps[1], 'model_name') else "N/A", # Accessing model_name from chain
-                "temperature": clarification_check_chain.steps[1].temperature if hasattr(clarification_check_chain, 'steps') and len(clarification_check_chain.steps) > 1 and hasattr(clarification_check_chain.steps[1], 'temperature') else "N/A"
+                "model": clarification_llm_instance.model_name if clarification_llm_instance and hasattr(clarification_llm_instance, 'model_name') else "N/A",
+                "temperature": clarification_llm_instance.temperature if clarification_llm_instance and hasattr(clarification_llm_instance, 'temperature') else "N/A"
             }
         )
 
@@ -159,14 +196,35 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
     # If no clarification needed, still try to generate an outline from the original question
     if not needs_clarification or not questions_to_ask:
         if verbose: print_verbose("LLM determined no clarification needed or failed to provide questions. Attempting outline generation.", style="green")
-        # Use the refinement chain directly with the original question
         conversation_history_str = f"Original Question: {question}\n(No clarification Q&A needed)"
         try:
             refinement_schema_instructions = refinement_json_parser.get_format_instructions()
-            refinement_result: Dict = refinement_chain.invoke({
-                "conversation_history": conversation_history_str,
-                "refinement_json_schema": refinement_schema_instructions
-            })
+            refinement_llm_instance = refinement_chain.steps[1] if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 else None
+
+            if LANGCHAIN_CALLBACKS_AVAILABLE and refinement_llm_instance:
+                with get_openai_callback() as cb:
+                    refinement_result: Dict = refinement_chain.invoke({
+                        "conversation_history": conversation_history_str,
+                        "refinement_json_schema": refinement_schema_instructions
+                    })
+                    prompt_tokens = cb.prompt_tokens
+                    completion_tokens = cb.completion_tokens
+                    model_name = refinement_llm_instance.model_name
+                    
+                    model_pricing_info = pricing_config.get(model_name)
+                    if model_pricing_info:
+                        input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
+                        output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
+                        call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
+                                         (completion_tokens / 1_000_000 * output_cost)
+                        current_call_cost += call_cost_iter
+                        if verbose: print_verbose(f"Refinement (no Q&A) call cost: ${call_cost_iter:.6f}", style="dim yellow")
+            else:
+                refinement_result: Dict = refinement_chain.invoke({
+                    "conversation_history": conversation_history_str,
+                    "refinement_json_schema": refinement_schema_instructions
+                })
+                if verbose and not LANGCHAIN_CALLBACKS_AVAILABLE: print_verbose("Langchain callbacks unavailable, skipping cost calculation for refinement (no Q&A).", style="dim yellow")
 
             # Log refinement attempt (no Q&A)
             log_prompt_data(
@@ -174,8 +232,8 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
                 prompt={"conversation_history": conversation_history_str, "refinement_json_schema": refinement_schema_instructions},
                 response=json.dumps(refinement_result), # Log the parsed JSON output
                 additional_info={
-                    "model": refinement_chain.steps[1].model_name if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 and hasattr(refinement_chain.steps[1], 'model_name') else "N/A",
-                    "temperature": refinement_chain.steps[1].temperature if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 and hasattr(refinement_chain.steps[1], 'temperature') else "N/A"
+                    "model": refinement_llm_instance.model_name if refinement_llm_instance and hasattr(refinement_llm_instance, 'model_name') else "N/A",
+                    "temperature": refinement_llm_instance.temperature if refinement_llm_instance and hasattr(refinement_llm_instance, 'temperature') else "N/A"
                 }
             )
 
@@ -185,11 +243,11 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
                  print_verbose(f"Generated outline for original question.", title="Outline Generation", style="green")
                  print_verbose(f"Refined Question (if changed): [cyan]'{refined_question}'[/cyan]", style="dim")
                  print_verbose(f"Plan Outline:\n{plan_outline}", style="dim")
-            return refined_question, plan_outline
+            return refined_question, plan_outline, current_call_cost
         except Exception as e:
             warnings.warn(f"LangChain refinement/outline chain failed even without Q&A: {e}")
             if verbose: print_verbose("Outline generation failed. Using original question and default outline.", style="red")
-            return question, default_outline
+            return question, default_outline, current_call_cost
 
     # --- User Interaction ---
     if verbose: print_verbose(f"LLM suggests asking {len(questions_to_ask)} question(s) for clarification.", style="yellow")
@@ -211,7 +269,7 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
 
     except (KeyboardInterrupt, EOFError):
          if verbose: print_verbose("\nUser cancelled clarification. Using original question and default outline.", style="bold red")
-         return question, default_outline
+         return question, default_outline, current_call_cost
 
     # --- LangChain Call 2: Refine the question ---
     conversation_history_str = "\n".join(conversation_lines)
@@ -220,10 +278,33 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
 
     try:
         refinement_schema_instructions = refinement_json_parser.get_format_instructions()
-        refinement_result: Dict = refinement_chain.invoke({
-            "conversation_history": conversation_history_str,
-            "refinement_json_schema": refinement_schema_instructions
-        })
+        refinement_llm_instance = refinement_chain.steps[1] if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 else None
+
+        if LANGCHAIN_CALLBACKS_AVAILABLE and refinement_llm_instance:
+            with get_openai_callback() as cb:
+                refinement_result: Dict = refinement_chain.invoke({
+                    "conversation_history": conversation_history_str,
+                    "refinement_json_schema": refinement_schema_instructions
+                })
+                prompt_tokens = cb.prompt_tokens
+                completion_tokens = cb.completion_tokens
+                model_name = refinement_llm_instance.model_name
+
+                model_pricing_info = pricing_config.get(model_name)
+                if model_pricing_info:
+                    input_cost = model_pricing_info.get('input_cost_per_million_tokens', 0)
+                    output_cost = model_pricing_info.get('output_cost_per_million_tokens', 0)
+                    call_cost_iter = (prompt_tokens / 1_000_000 * input_cost) + \
+                                     (completion_tokens / 1_000_000 * output_cost)
+                    current_call_cost += call_cost_iter
+                    if verbose: print_verbose(f"Refinement (with Q&A) call cost: ${call_cost_iter:.6f}", style="dim yellow")
+        else:
+            refinement_result: Dict = refinement_chain.invoke({
+                "conversation_history": conversation_history_str,
+                "refinement_json_schema": refinement_schema_instructions
+            })
+            if verbose and not LANGCHAIN_CALLBACKS_AVAILABLE: print_verbose("Langchain callbacks unavailable, skipping cost calculation for refinement (with Q&A).", style="dim yellow")
+
 
         # Log refinement attempt (with Q&A)
         log_prompt_data(
@@ -231,8 +312,8 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
             prompt={"conversation_history": conversation_history_str, "refinement_json_schema": refinement_schema_instructions},
             response=json.dumps(refinement_result), # Log the parsed JSON output
             additional_info={
-                "model": refinement_chain.steps[1].model_name if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 and hasattr(refinement_chain.steps[1], 'model_name') else "N/A",
-                "temperature": refinement_chain.steps[1].temperature if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 and hasattr(refinement_chain.steps[1], 'temperature') else "N/A"
+                "model": refinement_llm_instance.model_name if refinement_llm_instance and hasattr(refinement_llm_instance, 'model_name') else "N/A",
+                "temperature": refinement_llm_instance.temperature if refinement_llm_instance and hasattr(refinement_llm_instance, 'temperature') else "N/A"
             }
         )
 
@@ -247,13 +328,13 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
     if not refined_question or not plan_outline:
         warnings.warn("LLM failed to provide a refined question or plan outline. Using original question and default outline.")
         if verbose: print_verbose("LLM refinement/planning failed. Using original question and default outline.", style="red")
-        return question, default_outline
+        return question, default_outline, current_call_cost
 
     if verbose:
         print_verbose(f"Refined question: [cyan]'{refined_question}'[/cyan]", title="Clarification & Planning Complete", style="green")
         print_verbose(f"Plan Outline:\n{plan_outline}", style="dim")
 
-    return refined_question, plan_outline
+    return refined_question, plan_outline, current_call_cost
 
 # Example usage (for testing purposes, not run by default)
 if __name__ == '__main__':
@@ -292,9 +373,19 @@ def clarify_node(state: AgentState) -> Dict[str, Any]:
     if is_verbose: print_verbose("Entering Clarification Node", style="magenta")
 
     try:
-        clarified_q, plan_out = clarify_question(state['original_question'], verbose=is_verbose)
-        # Verbose printing happens inside clarify_question now
-        return {"clarified_question": clarified_q, "plan_outline": plan_out, "error": None}
+        clarified_q, plan_out, node_cost = clarify_question(state['original_question'], verbose=is_verbose)
+        current_total_cost = state.get('total_openai_cost', 0.0)
+        updated_total_cost = current_total_cost + node_cost
+        if is_verbose:
+            print_verbose(f"Clarifier node cost: ${node_cost:.6f}", style="yellow")
+            print_verbose(f"Total OpenAI cost updated: ${current_total_cost:.6f} -> ${updated_total_cost:.6f}", style="yellow")
+
+        return {
+            "clarified_question": clarified_q,
+            "plan_outline": plan_out,
+            "total_openai_cost": updated_total_cost, # Ensure state is updated
+            "error": None
+        }
     except Exception as e:
         error_msg = f"Clarification/Planning step failed: {e}"
         if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")

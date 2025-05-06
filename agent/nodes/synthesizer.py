@@ -14,8 +14,16 @@ from typing import Dict, Any, List, Tuple
 # Shared Utilities (Logging, LLM Init, Token Counting)
 from agent.utils import print_verbose, initialize_llm, count_tokens, OPENAI_AVAILABLE, log_prompt_data # Use absolute import
 
+# Langchain callbacks for token usage
+try:
+    from langchain_community.callbacks.manager import get_openai_callback
+    LANGCHAIN_CALLBACKS_AVAILABLE = True
+except ImportError:
+    warnings.warn("LangChain callbacks not found. Cost calculation via get_openai_callback will be disabled for synthesizer.")
+    LANGCHAIN_CALLBACKS_AVAILABLE = False
+
 # Config
-from agent.config import get_synthesizer_config # Use absolute import
+from agent.config import get_synthesizer_config, get_openai_pricing_config # Use absolute import
 
 # Agent State (for LangGraph node)
 from agent.state import AgentState # Use absolute import
@@ -93,16 +101,19 @@ def _post_process_citations(text: str, verbose: bool = False) -> str:
 
 # --- Main Synthesis Function ---
 
-def synthesize_answer(question: str, context: str, outline: str, verbose: bool = False) -> str:
+def synthesize_answer(question: str, context: str, outline: str, verbose: bool = False) -> Tuple[str, float]:
     """
     Synthesizes the final answer based on the provided curated context (notes).
     Instructs the LLM to preserve detailed citations, then post-processes them.
+    Returns the final answer string and the cost of the LLM call.
     """
     if verbose:
         print_verbose(f"Synthesizing for question: {question}", title="Synthesizing Answer")
         # print_verbose(f"Using Context:\n{context[:500]}...", style="dim") # Log start of context
 
-    final_answer = ""
+    final_answer_text = ""
+    current_call_cost = 0.0
+    pricing_config = get_openai_pricing_config().get('models', {})
     synth_config = get_synthesizer_config()
 
     llm = initialize_llm(
@@ -134,8 +145,27 @@ Structure your answer clearly. Do not invent facts or information not present in
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),
             ]
-            response = llm.invoke(messages)
-            raw_answer = response.content if hasattr(response, 'content') else str(response)
+            if LANGCHAIN_CALLBACKS_AVAILABLE and llm:
+                with get_openai_callback() as cb:
+                    response = llm.invoke(messages)
+                    raw_answer = response.content if hasattr(response, 'content') else str(response)
+
+                    prompt_tokens = cb.prompt_tokens
+                    completion_tokens = cb.completion_tokens
+                    model_name_for_cost = llm.model_name if hasattr(llm, 'model_name') else synth_config.get('model')
+                    
+                    model_pricing_info = pricing_config.get(model_name_for_cost)
+                    if model_pricing_info:
+                        input_cost_pm = model_pricing_info.get('input_cost_per_million_tokens', 0)
+                        output_cost_pm = model_pricing_info.get('output_cost_per_million_tokens', 0)
+                        call_cost_iter = (prompt_tokens / 1_000_000 * input_cost_pm) + \
+                                         (completion_tokens / 1_000_000 * output_cost_pm)
+                        current_call_cost += call_cost_iter
+                        if verbose: print_verbose(f"Synthesizer call cost: ${call_cost_iter:.6f}", style="dim yellow")
+            else:
+                response = llm.invoke(messages)
+                raw_answer = response.content if hasattr(response, 'content') else str(response)
+                if verbose and not LANGCHAIN_CALLBACKS_AVAILABLE: print_verbose("Langchain callbacks unavailable, skipping cost calculation for synthesizer.", style="dim yellow")
 
             # Log prompt and raw response
             log_prompt_data(
@@ -151,11 +181,11 @@ Structure your answer clearly. Do not invent facts or information not present in
             if verbose: print_verbose("LLM invocation successful. Raw answer received.", style="dim blue")
 
             # Post-process the raw answer for citations
-            final_answer = _post_process_citations(raw_answer, verbose=verbose)
+            final_answer_text = _post_process_citations(raw_answer, verbose=verbose)
 
         except Exception as e:
             warnings.warn(f"LLM invocation or citation processing failed: {e}")
-            final_answer = f"Could not generate an answer using AI due to an error: {e}\n\nRaw Context Provided:\n{context}"
+            final_answer_text = f"Could not generate an answer using AI due to an error: {e}\n\nRaw Context Provided:\n{context}"
 
     else:
         # Fallback if LLM init failed or core components missing
@@ -164,13 +194,13 @@ Structure your answer clearly. Do not invent facts or information not present in
                      else "OPENAI_API_KEY not set." if not os.getenv("OPENAI_API_KEY") \
                      else "LLM initialization failed."
         if verbose: print_verbose(f"{fallback_reason} Falling back to context echo.", style="yellow")
-        final_answer = f"AI synthesis requires prerequisites ({fallback_reason}).\n\nRaw Context Provided:\n{context}"
+        final_answer_text = f"AI synthesis requires prerequisites ({fallback_reason}).\n\nRaw Context Provided:\n{context}"
 
 
-    if verbose and not (final_answer and final_answer.strip()):
+    if verbose and not (final_answer_text and final_answer_text.strip()):
          print_verbose("Warning: Synthesized answer is empty.", style="yellow")
 
-    return final_answer.strip() if final_answer else "Synthesis failed or produced no output."
+    return (final_answer_text.strip() if final_answer_text else "Synthesis failed or produced no output."), current_call_cost
 
 # --- LangGraph Node ---
 
@@ -178,28 +208,35 @@ def synthesize_node(state: AgentState) -> Dict[str, Any]:
     """LangGraph node to synthesize the final answer using the curated context."""
     is_verbose = state['verbosity_level'] == 2
     # Check for error from previous steps (like consolidation)
+    current_total_openai_cost = state.get('total_openai_cost', 0.0) # Get existing cost
+
     if state.get("error"):
          if is_verbose: print_verbose("Skipping synthesis due to previous error.", style="yellow")
          # Ensure final_answer reflects the error state
          error_msg = state.get('error', 'Unknown error before synthesis')
-         return {"final_answer": f"Agent stopped before synthesis due to error: {error_msg}"}
+         return {"final_answer": f"Agent stopped before synthesis due to error: {error_msg}", "total_openai_cost": current_total_openai_cost}
 
     if is_verbose: print_verbose("Entering Synthesis Node", style="magenta")
 
     try:
         # Call the updated synthesize_answer function
-        answer = synthesize_answer(
+        answer_text, node_cost = synthesize_answer(
             state['clarified_question'],
             state['combined_context'], # This now contains curated notes from consolidator
             state['plan_outline'],
             verbose=is_verbose
         )
+        updated_total_openai_cost = current_total_openai_cost + node_cost
+        if is_verbose:
+            print_verbose(f"Synthesizer node cost: ${node_cost:.6f}", style="yellow")
+            print_verbose(f"Total OpenAI cost updated: ${current_total_openai_cost:.6f} -> ${updated_total_openai_cost:.6f}", style="yellow")
+        
         # Verbose printing is handled within synthesize_answer and _post_process_citations
-        return {"final_answer": answer, "error": None} # Clear error on success
+        return {"final_answer": answer_text, "total_openai_cost": updated_total_openai_cost, "error": None} # Clear error on success
     except Exception as e:
         error_msg = f"Synthesis step failed unexpectedly: {e}"
         if is_verbose: print_verbose(error_msg, title="Node Error", style="bold red")
         # Return error and a failure message in final_answer
-        return {"error": error_msg, "final_answer": f"Synthesis failed: {e}"}
+        return {"error": error_msg, "final_answer": f"Synthesis failed: {e}", "total_openai_cost": current_total_openai_cost}
 
 # __all__ = ['synthesize_node'] # Keep node as main export
