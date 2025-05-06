@@ -3,7 +3,7 @@ Shared utility functions for the agent package.
 """
 import os
 import warnings
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
 # --- Rich Output Handling ---
 try:
@@ -162,4 +162,61 @@ def count_tokens(text: str, model: str = 'gpt-4o-mini') -> int:
         warnings.warn(f"Could not count tokens for model '{effective_model}': {e}")
         return 0
 
+import json
+from datetime import datetime
+try:
+    from .config import get_prompt_logging_config
+    PROMPT_LOGGING_CONFIG_AVAILABLE = True
+except ImportError:
+    PROMPT_LOGGING_CONFIG_AVAILABLE = False
+    def get_prompt_logging_config(): return {'enabled': False, 'log_file_path': ''}
+
+def log_prompt_data(
+    node_name: str,
+    prompt: Any,
+    response: Optional[str] = None,
+    additional_info: Optional[Dict[str, Any]] = None
+):
+    """
+    Logs prompt and response data to a JSONL file if enabled in config.
+
+    Args:
+        node_name (str): Name of the node or component generating the prompt.
+        prompt (Any): The prompt content (can be string, list of messages, etc.).
+        response (Optional[str]): The LLM's response.
+        additional_info (Optional[Dict[str, Any]]): Other data like model, temp.
+    """
+    if not PROMPT_LOGGING_CONFIG_AVAILABLE:
+        return
+
+    logging_config = get_prompt_logging_config()
+    if not logging_config.get('enabled', False):
+        return
+
+    log_file_path = logging_config.get('log_file_path')
+    if not log_file_path:
+        warnings.warn("Prompt logging enabled but no log_file_path configured.")
+        return
+
+    try:
+        # Ensure log directory exists
+        log_dir = os.path.dirname(log_file_path)
+        if log_dir: # Create directory only if path is not just a filename
+            os.makedirs(log_dir, exist_ok=True)
+
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "node_name": node_name,
+            "prompt": prompt,
+        }
+        if response is not None:
+            log_entry["response"] = response
+        if additional_info:
+            log_entry.update(additional_info)
+
+        with open(log_file_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(log_entry) + '\n')
+
+    except Exception as e:
+        warnings.warn(f"Failed to write to prompt log file '{log_file_path}': {e}")
 # --- Other Potential Utilities (Add as needed) ---

@@ -9,7 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # Shared Utilities (Logging, LLM Init)
-from agent.utils import print_verbose, initialize_llm # Use absolute import
+from agent.utils import print_verbose, initialize_llm, log_prompt_data # Use absolute import
 
 # Agent State
 from agent.state import AgentState # Use absolute import
@@ -151,6 +151,26 @@ Based on the current state (Iteration {current_iteration+1}/{max_iterations}), w
         ]
         response = reasoner_llm.invoke(messages)
         decision_text = response.content if hasattr(response, 'content') else str(response)
+
+        # Log prompt and response
+        log_prompt_data(
+            node_name="reasoner_node",
+            prompt={"system_prompt": system_prompt.format(
+                        iteration=current_iteration+1,
+                        max_iterations=max_iterations,
+                        seen_queries=formatted_seen_queries,
+                        seen_urls=formatted_seen_urls
+                    ), "user_prompt": user_prompt.format(
+                        formatted_seen_queries=formatted_seen_queries,
+                        formatted_seen_urls=formatted_seen_urls
+                    )
+            },
+            response=decision_text,
+            additional_info={
+                "model": reasoner_llm.model_name if reasoner_llm else reasoner_config.get('model'),
+                "temperature": reasoner_llm.temperature if reasoner_llm else reasoner_config.get('temperature')
+            }
+        )
 
         if is_verbose: print_verbose(f"LLM Decision Output:\n{decision_text}", style="dim")
 

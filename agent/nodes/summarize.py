@@ -13,7 +13,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # Shared Utilities
-from agent.utils import print_verbose, initialize_llm, count_tokens, OPENAI_AVAILABLE
+from agent.utils import print_verbose, initialize_llm, count_tokens, OPENAI_AVAILABLE, log_prompt_data
 
 # --- LangGraph Node ---
 
@@ -82,6 +82,18 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
         ]
         response = summarizer_llm.invoke(messages)
         summary_note = response.content if hasattr(response, 'content') else str(response)
+
+        # Log prompt and response
+        log_prompt_data(
+            node_name="summarize_chunks_node",
+            prompt={"system_prompt": system_prompt, "user_prompt": user_prompt},
+            response=summary_note,
+            additional_info={
+                "model": summarizer_llm.model_name if summarizer_llm else summarizer_config.get('model'),
+                "temperature": summarizer_llm.temperature if summarizer_llm else summarizer_config.get('temperature'),
+                "clarified_question_for_context": state['clarified_question']
+            }
+        )
 
         if not summary_note or not summary_note.strip():
              warnings.warn("Summarizer LLM returned an empty note.")

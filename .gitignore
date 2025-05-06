@@ -139,3 +139,5 @@ cython_debug/
 
 # Configuration files
 config.yaml
+
+logs

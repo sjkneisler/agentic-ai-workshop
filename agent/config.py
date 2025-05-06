@@ -79,6 +79,10 @@ Argument: [Your search query | URL to fetch | Your vector store query | None]
     },
     'graph': { # Configuration for the LangGraph execution
         'recursion_limit': 100 # Default recursion limit for the graph
+    },
+    'prompt_logging': { # Configuration for prompt logging
+        'enabled': False, # Set to True to enable prompt logging
+        'log_file_path': "logs/prompt_logs.jsonl" # Path to save prompt logs
     }
 }
 
@@ -150,3 +154,7 @@ def get_clarifier_config() -> Dict[str, Any]: # Added getter for clarifier
 def get_graph_config() -> Dict[str, Any]:
     """Returns the configuration for graph execution parameters."""
     return CONFIG.get('graph', DEFAULT_CONFIG['graph'])
+
+def get_prompt_logging_config() -> Dict[str, Any]:
+    """Returns the configuration for prompt logging."""
+    return CONFIG.get('prompt_logging', DEFAULT_CONFIG['prompt_logging'])

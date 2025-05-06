@@ -16,7 +16,7 @@ except ImportError:
 
 # Shared Utilities (Logging, LLM Init)
 # Import initialize_llm as well
-from agent.utils import print_verbose, RICH_AVAILABLE, Panel, rich_print, initialize_llm # Use absolute import
+from agent.utils import print_verbose, RICH_AVAILABLE, Panel, rich_print, initialize_llm, log_prompt_data # Use absolute import
 from agent.config import get_clarifier_config # Use absolute import
 
 # --- Pydantic Model for JSON Output ---
@@ -132,6 +132,18 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
             "question": question,
             "json_schema": json_schema_instructions
         })
+
+        # Log clarification check
+        log_prompt_data(
+            node_name="clarifier_node_check",
+            prompt={"question": question, "json_schema": json_schema_instructions},
+            response=json.dumps(clarification_info), # Log the parsed JSON output
+            additional_info={
+                "model": clarification_check_chain.steps[1].model_name if hasattr(clarification_check_chain, 'steps') and len(clarification_check_chain.steps) > 1 and hasattr(clarification_check_chain.steps[1], 'model_name') else "N/A", # Accessing model_name from chain
+                "temperature": clarification_check_chain.steps[1].temperature if hasattr(clarification_check_chain, 'steps') and len(clarification_check_chain.steps) > 1 and hasattr(clarification_check_chain.steps[1], 'temperature') else "N/A"
+            }
+        )
+
         needs_clarification = clarification_info.get('needs_clarification', False)
         questions_to_ask = clarification_info.get('questions_to_ask', [])
         if not isinstance(questions_to_ask, list):
@@ -155,6 +167,18 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
                 "conversation_history": conversation_history_str,
                 "refinement_json_schema": refinement_schema_instructions
             })
+
+            # Log refinement attempt (no Q&A)
+            log_prompt_data(
+                node_name="clarifier_node_refine_no_q&a",
+                prompt={"conversation_history": conversation_history_str, "refinement_json_schema": refinement_schema_instructions},
+                response=json.dumps(refinement_result), # Log the parsed JSON output
+                additional_info={
+                    "model": refinement_chain.steps[1].model_name if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 and hasattr(refinement_chain.steps[1], 'model_name') else "N/A",
+                    "temperature": refinement_chain.steps[1].temperature if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 and hasattr(refinement_chain.steps[1], 'temperature') else "N/A"
+                }
+            )
+
             refined_question = refinement_result.get('refined_question', question)
             plan_outline = refinement_result.get('plan_outline', default_outline)
             if verbose:
@@ -200,6 +224,18 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str]:
             "conversation_history": conversation_history_str,
             "refinement_json_schema": refinement_schema_instructions
         })
+
+        # Log refinement attempt (with Q&A)
+        log_prompt_data(
+            node_name="clarifier_node_refine_with_q&a",
+            prompt={"conversation_history": conversation_history_str, "refinement_json_schema": refinement_schema_instructions},
+            response=json.dumps(refinement_result), # Log the parsed JSON output
+            additional_info={
+                "model": refinement_chain.steps[1].model_name if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 and hasattr(refinement_chain.steps[1], 'model_name') else "N/A",
+                "temperature": refinement_chain.steps[1].temperature if hasattr(refinement_chain, 'steps') and len(refinement_chain.steps) > 1 and hasattr(refinement_chain.steps[1], 'temperature') else "N/A"
+            }
+        )
+
         refined_question = refinement_result.get('refined_question')
         plan_outline = refinement_result.get('plan_outline')
 

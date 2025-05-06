@@ -12,7 +12,7 @@ import warnings
 from typing import Dict, Any, List, Tuple
 
 # Shared Utilities (Logging, LLM Init, Token Counting)
-from agent.utils import print_verbose, initialize_llm, count_tokens, OPENAI_AVAILABLE # Use absolute import
+from agent.utils import print_verbose, initialize_llm, count_tokens, OPENAI_AVAILABLE, log_prompt_data # Use absolute import
 
 # Config
 from agent.config import get_synthesizer_config # Use absolute import
@@ -136,6 +136,17 @@ Structure your answer clearly. Do not invent facts or information not present in
             ]
             response = llm.invoke(messages)
             raw_answer = response.content if hasattr(response, 'content') else str(response)
+
+            # Log prompt and raw response
+            log_prompt_data(
+                node_name="synthesize_node",
+                prompt={"system_prompt": system_prompt, "user_prompt": user_prompt},
+                response=raw_answer, # Log the raw answer before citation processing
+                additional_info={
+                    "model": llm.model_name if llm else synth_config.get('model'),
+                    "temperature": llm.temperature if llm else synth_config.get('temperature')
+                }
+            )
 
             if verbose: print_verbose("LLM invocation successful. Raw answer received.", style="dim blue")
 
