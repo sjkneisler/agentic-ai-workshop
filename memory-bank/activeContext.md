@@ -2,117 +2,72 @@
 
 ## Current Work Focus
 
-The primary focus is on **Enhancing Agent Observability and Efficiency**.
+The primary focus is on **Refining Agent Research Quality and Output Comprehensiveness**.
 Current efforts are focused on:
-- Implementing **Prompt Logging** (Complete for core LLM nodes).
-- Implementing **OpenAI API Cost Tracking** (Complete for core LLM & embedding nodes). This provides an estimated cost for each agent run.
-- Preparing for the implementation of **Persistent Website Caching**.
+- Improving citation generation and post-processing.
+- Ensuring the agent covers all aspects of a multi-faceted query.
+- Enhancing the depth and detail of the final synthesized answer.
+- Addressing issues with temporal anchoring (e.g., focusing on the correct year for "latest" advancements).
 - Ongoing **Testing and Refinement** of the Deep Research Loop architecture.
 
-## Recent Changes
+## Recent Changes (This Session)
 
-**OpenAI API Cost Tracking (This Session):**
-- **State:** Added `total_openai_cost: float` to `AgentState` in `agent/state.py`.
-- **Configuration:**
-- Added `openai_pricing` section to `config.yaml` with model costs.
-- Updated `agent/config.py` to load pricing and add `get_openai_pricing_config()` getter.
-- **Node Integration (Cost Calculation - Iterative Refinement):**
-  - **Initial Approach:** All LLM/embedding nodes (`clarifier.py`, `reasoner.py`, `chunk_embed.py`, `summarize.py`, `synthesizer.py`) were modified to use `get_openai_callback` to capture `prompt_tokens` and `completion_tokens`, calculating cost with pricing from `config.yaml`.
-  - **Second Approach:** Switched all above nodes to use `cb.total_cost` from the callback handler, relying on Langchain's internal pricing.
-  - **Current (Final) Approach:**
-    - **LLM Nodes (`clarifier.py`, `reasoner.py`, `summarize.py`, `synthesizer.py`):** Continue to use `cb.total_cost` from `get_openai_callback` for cost calculation. This leverages Langchain's internal pricing and handling of cached prompt tokens.
-    - **Embedding Node (`agent/nodes/chunk_embed.py`):**
-      - Reverted from using `cb.total_cost` or `cb.total_tokens` due to these not reliably reporting embedding token usage.
-      - Now manually counts tokens for each document batch using `agent.utils.count_tokens(text, model=embedding_model_name)` *before* the embedding API call.
-      - Calculates cost for these manually counted tokens using the `cost_per_million_tokens` from the `openai_pricing` section in `config.yaml`.
-      - The `get_openai_callback` context manager is no longer used for cost calculation in `chunk_embed.py`.
-      - Corrected a `TypeError` in `chunk_embed.py` by changing the `count_tokens` parameter from `model_name=` to `model=`.
-  - All nodes update `total_openai_cost` in the agent state.
-- **Agent Runner & Display:**
-- Modified `run_agent` in `agent/__init__.py` to initialize and return `total_openai_cost`.
-- Updated `main.py` to receive and print the `total_openai_cost`.
+**Iteration 1: Initial Fixes Post Log Analysis**
+- **Citation Prompts:**
+    - Strengthened system prompt in `agent/nodes/summarize.py` to be more explicit about including exact citation tags.
+    - Strengthened system prompt in `agent/nodes/synthesizer.py` to be extremely explicit about preserving citation tags verbatim.
+- **Redundant Fetching/Similar Searches:**
+    - Updated `agent/nodes/reasoner.py` prompt to be more forceful about not re-fetching already processed URLs.
+    - Updated `agent/nodes/reasoner.py` prompt to further discourage semantically similar search queries.
+- **Clarifier Year Anchoring (Attempt 1):**
+    - Modified `agent/nodes/clarifier.py` refinement prompt to emphasize "latest" or "current" advancements.
+- **Synthesizer Debugging:**
+    - Added verbose logging in `agent/nodes/synthesizer.py` to print the raw `combined_context` fed to the LLM to help diagnose citation issues.
 
-**Prompt Logging Implementation (Previous Part of This Session):**
-- **Configuration:**
-- Added a `prompt_logging` section to `config.yaml`.
-- Updated `agent/config.py` for prompt logging.
-- **Utility:**
-- Created `log_prompt_data` function in `agent/utils.py`.
-- **Node Integration:**
-- Integrated `log_prompt_data` into `clarifier.py`, `reasoner.py`, `summarize.py`, `synthesizer.py`.
-- **Bug Fixes:**
-- Resolved `NameError: name 'Dict' is not defined` in `agent/utils.py`.
-- Resolved `AttributeError: 'ChatOpenAI' object has no attribute 'model'` in `agent/nodes/clarifier.py`.
+**Iteration 2: Addressing `KeyError` and Richer Synthesizer Context**
+- **Clarifier `KeyError: 'topic'` Fix:**
+    - Modified `agent/nodes/clarifier.py` refinement prompt to have the LLM infer the main topic from the question rather than requiring a `{topic}` variable.
+    - Prompt now also encourages separate outline sections for distinct aspects of a query.
+    - Dynamically added current year to clarifier prompt and updated `clarify_question` to pass it. Added `import datetime`.
+- **State & Node Updates for Richer Synthesizer Context:**
+    - **`agent/state.py`:**
+        - Defined `StructuredNote(TypedDict)`: `{'summary': str, 'source_chunks': List[Document]}`.
+        - Updated `AgentState.notes` to be `List[StructuredNote]`.
+    - **`agent/nodes/summarize.py`:**
+        - Modified to append `StructuredNote` objects (summary + its source_chunks) to `state.notes`.
+    - **`agent/nodes/consolidate.py`:**
+        - Updated to handle `List[StructuredNote]`.
+        - Ranks based on summaries but retains association with `source_chunks`.
+        - Constructs `combined_context` to include both ranked summaries and the `page_content` of their corresponding source_chunks.
+    - **`agent/nodes/synthesizer.py`:**
+        - Updated citation regex to: `re.compile(r"(\[Source\s+(?:\w+\s*=\s*'[^']*'(?:\s*,\s*|\s+)?)+\])")`.
+        - Updated system prompt to instruct the LLM on using both summaries and raw chunks from the enriched `combined_context`.
+- **Summarizer Output Length:**
+    - Increased target word count in `agent/nodes/summarize.py` prompt to aim for 300-400 words.
+- **Reasoner `KeyError: 'summary'` Fix:**
+    - Updated `agent/nodes/reasoner.py` to correctly access `note['summary']` from `StructuredNote` objects when formatting its prompt.
 
-**(Previous Session: Deep Research Loop Implementation & Debugging)**
-- **Initial Implementation:**
-    - New Graph Structure: Defined in `agent/__init__.py`.
-    - Reasoner Refactor: `agent/nodes/reasoner.py` became a decision-making LLM call.
-    - New Nodes Added: `search`, `fetch`, `chunk_embed`, `retrieve`, `summarize`, `consolidate` nodes created in `agent/nodes/`.
-    - New Tool Added: `fetch_url` tool in `agent/tools/fetch.py`.
-    - State Update: Added fields to `agent/state.py` for loop control and data handling.
-    - Synthesizer Update: Modified for citation handling.
-    - Configuration Update: Added sections to `config.yaml` / `agent/config.py`.
-    - Dependencies Update: Added `requests-html`, `lxml[html_clean]`, `sentence-transformers`.
-    - File Organization: Nodes moved into `agent/nodes/`.
-- **Debugging Fixes (Previous Session):**
-    - `reasoner.py`: Added `seen_queries`, `seen_urls`; strengthened prompt; corrected `search_results` persistence; introduced `query_for_retrieval`.
-    - `chunk_embed.py`: Implemented batching; corrected `query_for_retrieval` preservation.
-    - `state.py`: Added `query_for_retrieval`, `seen_urls`.
-    - `__init__.py`: Corrected graph flow (`route_after_chunk_embed`); fixed `ImportError`; made recursion limit configurable.
-    - `retrieve.py`: Modified to use `query_for_retrieval`.
-    - `agent/tools/fetch.py`: Fixed `NameError: name 'requests_html' is not defined`.
-    - `agent/config.py`: Added `graph` section and getter.
-    - `config.yaml`: Added `graph` section.
+**(Previous Sessions: Cost Tracking, Prompt Logging, Deep Research Loop Implementation - details in older activeContext versions or commit history)**
 
---- (Previous Change Log Snippets for Context) ---
+## Current Known Issues & Observations (Post Last Run)
 
-- **Refactored Reasoner to Iterative Agent:** ... (details omitted for brevity - superseded by Deep Research Loop) ...
-- **Refactored Agent Pipeline to LangGraph:** ... (details omitted for brevity) ...
-- **Centralized Shared Utilities:** ... (details omitted for brevity) ...
-- *(... and so on for other previous changes ...)*
+- **Citation Post-Processing:** While detailed citation tags `[Source URL='...', ...]` are now present in the synthesizer's *raw output* (confirmed by `RAW COMBINED CONTEXT` log), the `_post_process_citations` function in `synthesizer.py` still reports "No detailed citation tags found for post-processing." This means its internal regex is not matching these tags for replacement with `[ref:N]`. The regex `(\[Source\s+(?:\w+\s*=\s*'[^']*'(?:\s*,\s*|\s+)?)+\])` needs further debugging or refinement.
+- **Incomplete Topic Coverage:** The last run, while better on year focusing, still seemed to heavily favor "code review" over "code generation," despite the clarifier producing an outline with sections for both. The reasoner might not be effectively using the outline to ensure all parts are researched.
+- **Output Length/Depth:** While the synthesizer now receives raw chunks, the final answer's depth and coverage of all sub-topics (like specific code generation models) could still be improved.
 
-## Next Steps
+## Next Steps (Immediate)
 
-1.  **Verify OpenAI API Cost Tracking:**
-    *   Run the agent with various queries (`python3 main.py "..."`).
-    *   Confirm that an estimated cost is displayed.
-    *   Manually check a few LLM/embedding calls against OpenAI pricing to ensure rough accuracy (requires inspecting logs or verbose output if token counts are printed).
-2.  **Implement Persistent Website Caching:**
-    *   Upgrade `session_vector_store` (ChromaDB) to be persistent.
-    *   Implement a TTL mechanism.
-    *   Modify `reasoner_node` and `chunk_embed_node`.
-    *   Make ChromaDB path and TTL configurable.
-3.  **Verify Prompt Logging (If not already confirmed):**
-    *   Run the agent with logging enabled.
-    *   Inspect `logs/prompt_logs.jsonl`.
-4.  **Verify Deep Research Loop Fixes (If not already confirmed):**
-    *   Run the agent again (`python3 main.py "..." --verbose`).
-5.  **Refine Reasoner (If Needed).**
-6.  **Run/Update Automated Tests:**
-    *   Execute `python3 -m pytest`. Tests will need updates for new features like cost tracking and upcoming caching.
-7.  **Update README & Docs:**
-    *   Reflect prompt logging and API cost tracking features.
-    *   Reflect persistent caching feature (once implemented).
-8.  **Polish Pass:**
-    *   Pin requirements, validate all configs, review outputs, address TODOs.
+1.  **Finalize Memory Bank Update:** Review and update `progress.md`, `systemPatterns.md`, and `techContext.md`.
+2.  **Address Citation Regex:** Add debug prints within `_post_process_citations` in `synthesizer.py` to inspect the exact strings the regex is attempting to match against. This will allow for precise regex correction.
+3.  **Strengthen Reasoner's Outline Adherence:** Further refine the `reasoner.py` system prompt to more strongly compel it to generate actions that cover all sections of the `plan_outline`, especially those currently lacking information in `notes`.
+4.  **Refine Synthesizer's Use of Raw Chunks:** Adjust the `synthesizer.py` prompt to more explicitly guide the LLM to prioritize and extract detailed information from the "Supporting Raw Chunks" sections, using summaries mainly for structure.
+5.  **Consider Further Clarifier Prompting for Year:** If year-specific searches are still problematic, explore making the clarifier even more direct in how it formulates the refined question regarding the current year.
 
 ## Active Decisions & Considerations
 
-- **Agent Architecture:** Confirmed as explicit "Deep Research Loop" graph. Flow corrected to `Embed -> Retrieve -> Summarize -> Reasoner`.
-- **Observability:**
-    - Implemented prompt logging to `agent/utils.py` and integrated into core LLM nodes. Configurable via `config.yaml`.
-    - Implemented OpenAI API cost tracking, integrated into LLM/embedding nodes, and displayed in `main.py`. Configurable pricing in `config.yaml`.
-- **Reasoner:** Remains central decision-maker.
-- **State Management:**
-    - Added `total_openai_cost` to `AgentState`.
-    - `query_for_retrieval` and `seen_urls` are managed.
-    - `reasoner.py` persists `search_results`.
-- **Content Handling:** Fetch -> Chunk/Batch Embed -> Retrieve -> Summarize flow implemented.
-- **Vector Store:** Currently ephemeral.
-- **Summarization/Consolidation/Source Tracking:** No changes beyond integrating prompt/cost logging.
-- **Configuration/File Structure:**
-    - Added `graph` and `prompt_logging` sections to `config.yaml` and `agent/config.py`.
-    - Added `openai_pricing` section to `config.yaml` and `agent/config.py`.
-    - Added `log_prompt_data` utility to `agent/utils.py`.
-- **Testing:** Requires updates for cost tracking and upcoming caching.
+- **Agent Architecture:** Deep Research Loop with `StructuredNote` passing raw chunks to synthesizer is the current approach.
+- **Observability:** Prompt logging and cost tracking are functional. Added raw context logging to synthesizer.
+- **Citation Strategy:** Summaries embed full tags. Synthesizer aims to preserve these, then post-process. The preservation part seems to work; the post-processing regex is the issue.
+- **Topic Coverage Strategy:** Relying on clarifier outline and reasoner's ability to follow it. Needs strengthening.
+- **State Management:** `notes` are now `List[StructuredNote]`. `combined_context` is a rich string of summaries + raw chunks.
+- **Testing:** Automated tests (`test_agent.py`) are significantly outdated and need a major overhaul once the core loop behavior stabilizes.

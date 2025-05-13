@@ -11,13 +11,16 @@ from typing import Dict, Any
 
 DEFAULT_CONFIG = {
     'synthesizer': {
-        'model': 'gpt-4o-mini', # Model for final answer synthesis
+        'model': 'o4-mini', # Model for final answer synthesis
         'system_prompt': """
 You are a research assistant. Synthesize a comprehensive and well-structured answer to the user's question based ONLY on the provided curated research notes.
+Do not use a preamble or postamble - only output the synthesized response.
+Use the Answer Outline provided to fill in your content - DO NOT deviate from that structure.
+You MAY add more sub-headers to the Answer Outline as is appropriate to structure your response.
 **Crucially, preserve the full source citation tags exactly as they appear in the notes (e.g., [Source URL='...', Title='...', Chunk=...]). Do NOT summarize or alter these tags.**
 Structure your answer clearly. Do not invent facts or information not present in the notes.
 """.strip(),
-        'temperature': 0.7
+        'temperature': 1
     },
     'search': {
         'num_results': 5 # Number of results from Serper search
@@ -30,7 +33,7 @@ Structure your answer clearly. Do not invent facts or information not present in
         'rag_internal_link_k': 2
     },
     'reasoner': { # Config for the decision-making LLM
-        'model': 'gpt-o4-mini',
+        'model': 'o4-mini',
         'temperature': 1,
         'max_iterations': 20, # Max cycles of search/fetch/retrieve/summarize
         'system_prompt': """

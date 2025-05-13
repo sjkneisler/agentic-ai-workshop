@@ -1,3 +1,4 @@
+import datetime
 import os
 import warnings
 import json
@@ -85,10 +86,13 @@ Respond ONLY with a JSON object matching the following schema:
         clarification_check_chain = clarification_check_prompt | clarification_llm | json_parser
 
         # --- Refinement Chain ---
-        refinement_system_prompt = """You are an assistant that refines a user's research question based on a clarifying conversation AND generates a basic Markdown research plan outline.
+        refinement_system_prompt = """You are an assistant that refines a user's research question based on a clarifying conversation AND generates a Markdown research plan outline.
+Your goal is to focus the research on the **very latest or current advancements** relevant to the user's query. The current year is {current_year}.
+If the user's query implies "latest," "current," or "recent," ensure the refined question and outline reflect this by specifically targeting advancements up to and including {current_year}.
+Avoid anchoring to past years unless explicitly part of the user's original request.
 Given the original question and the subsequent Q&A, synthesize:
-1. A single, clear, and focused question suitable for a research agent.
-2. A simple Markdown outline containing a title (derived from the refined question) and 3-5 relevant section headers to guide the research.
+1. A single, clear, and focused question suitable for a research agent, emphasizing recency (e.g., "What are the current leading advancements in [main topic of the question] as of {current_year}?").
+2. A Markdown outline containing a title (derived from the refined question) and 3-5 relevant section headers to guide the research into these current advancements. Within each section header should be more sub-headers as is appropriate to fully cover the topic. Ensure the outline clearly separates distinct aspects of the user's query if multiple are present (e.g., separate sections for 'code generation' and 'code review' if the user asks about both).
 
 Respond ONLY with a JSON object matching the following schema:
 {refinement_json_schema}"""
@@ -113,6 +117,8 @@ Respond ONLY with a JSON object matching the following schema:
 
 # --- Main Clarifier Function ---
 
+import datetime # Add this import at the top of the file
+
 def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, float]:
     """
     Clarifies the user's question using LangChain if needed, generates a plan outline,
@@ -124,7 +130,8 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, fl
             - plan_outline (str): The generated Markdown outline (or a default if generation fails).
             - cost (float): The estimated cost of OpenAI API calls made during clarification.
     """
-    default_outline = f"# Research Plan: {question}\n\n## Overview\n\n## Key Aspects\n\n## Conclusion"
+    current_year = datetime.datetime.now().year
+    default_outline = f"# Research Plan for {current_year}: {question}\n\n## Overview\n\n## Key Aspects as of {current_year}\n\n## Conclusion"
     current_call_cost = 0.0
     pricing_config = get_openai_pricing_config().get('models', {})
 
@@ -197,7 +204,8 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, fl
                 with get_openai_callback() as cb:
                     refinement_result: Dict = refinement_chain.invoke({
                         "conversation_history": conversation_history_str,
-                        "refinement_json_schema": refinement_schema_instructions
+                        "refinement_json_schema": refinement_schema_instructions,
+                        "current_year": current_year
                     })
                     # Cost is now directly from the callback handler
                     call_cost_iter = cb.total_cost
@@ -206,7 +214,8 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, fl
             else:
                 refinement_result: Dict = refinement_chain.invoke({
                     "conversation_history": conversation_history_str,
-                    "refinement_json_schema": refinement_schema_instructions
+                    "refinement_json_schema": refinement_schema_instructions,
+                    "current_year": current_year
                 })
                 if verbose and not LANGCHAIN_CALLBACKS_AVAILABLE: print_verbose("Langchain callbacks unavailable, skipping cost calculation for refinement (no Q&A).", style="dim yellow")
 
@@ -268,7 +277,8 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, fl
             with get_openai_callback() as cb:
                 refinement_result: Dict = refinement_chain.invoke({
                     "conversation_history": conversation_history_str,
-                    "refinement_json_schema": refinement_schema_instructions
+                    "refinement_json_schema": refinement_schema_instructions,
+                    "current_year": current_year
                 })
                 # Cost is now directly from the callback handler
                 call_cost_iter = cb.total_cost
@@ -277,7 +287,8 @@ def clarify_question(question: str, verbose: bool = False) -> Tuple[str, str, fl
         else:
             refinement_result: Dict = refinement_chain.invoke({
                 "conversation_history": conversation_history_str,
-                "refinement_json_schema": refinement_schema_instructions
+                "refinement_json_schema": refinement_schema_instructions,
+                "current_year": current_year
             })
             if verbose and not LANGCHAIN_CALLBACKS_AVAILABLE: print_verbose("Langchain callbacks unavailable, skipping cost calculation for refinement (with Q&A).", style="dim yellow")
 

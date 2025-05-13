@@ -59,8 +59,10 @@ def _post_process_citations(text: str, verbose: bool = False) -> str:
     if verbose: print_verbose("Post-processing citations...", style="dim blue")
 
     # Regex to find the detailed citation tags
-    # Matches [Source KEY='VALUE', KEY='VALUE', ...]
-    citation_pattern = re.compile(r"(\[Source\s+(?:(?:\w+='[^']*')(?:\s*,\s*)?)+\])")
+    # Made more robust to handle variations in spacing and ensure it captures the full tag.
+    # It looks for "[Source", then any characters (non-greedy) until "='", then any characters until "'",
+    # and repeats this for key-value pairs, finally closing with "]".
+    citation_pattern = re.compile(r"(\[Source\s+(?:\w+\s*=\s*'[^']*'(?:\s*,\s*|\s+)?)+\])")
 
     unique_citations = {} # Store unique tags and their assigned number
     reference_list_items = []
@@ -109,7 +111,7 @@ def synthesize_answer(question: str, context: str, outline: str, verbose: bool =
     """
     if verbose:
         print_verbose(f"Synthesizing for question: {question}", title="Synthesizing Answer")
-        # print_verbose(f"Using Context:\n{context[:500]}...", style="dim") # Log start of context
+        print_verbose(f"RAW COMBINED CONTEXT FED TO SYNTHESIZER LLM:\n---\n{context}\n---", style="dim") # Log full raw context if verbose
 
     final_answer_text = ""
     current_call_cost = 0.0
@@ -130,12 +132,32 @@ def synthesize_answer(question: str, context: str, outline: str, verbose: bool =
         try:
             # Updated system prompt to handle new citation format
             system_prompt = synth_config.get('system_prompt', """
-You are a research assistant. Synthesize a comprehensive and well-structured answer to the user's question based ONLY on the provided curated research notes.
-**Crucially, preserve the full source citation tags exactly as they appear in the notes (e.g., [Source URL='...', Title='...', Chunk=...]). Do NOT summarize or alter these tags.**
-Structure your answer clearly. Do not invent facts or information not present in the notes.
+You are a research assistant. Your task is to synthesize a comprehensive and well-structured answer to the user's question.
+You will be provided with:
+1.  The User's Question.
+2.  An Answer Outline (you should follow this structure, adding sub-headers if needed).
+3.  Curated Research Information, which includes:
+    *   Ranked Summary Notes.
+    *   Supporting Raw Chunks for each summary note, containing more detailed information and the original citation tags.
+
+**Instructions for Synthesizing the Answer:**
+1.  Base your answer ONLY on the provided Curated Research Information. Do not use outside knowledge.
+2.  Follow the provided Answer Outline. You may add more sub-headers if it helps structure your response.
+3.  Use the Summary Notes as a primary guide for content and flow.
+4.  Refer to the "Supporting Raw Chunks" for specific details, facts, figures, and to ensure comprehensive coverage of topics mentioned in the summaries. The raw chunks are the ultimate source of truth.
+5.  Do not use a preamble or postamble - only output the synthesized response.
+
+**EXTREMELY IMPORTANT CITATION PRESERVATION RULES:**
+1.  The Supporting Raw Chunks contain citation tags in the format: `[Source URL='<URL>', Title='<TITLE>', Chunk=<CHUNK_INDEX>]`. These tags are associated with specific pieces of information within those chunks.
+2.  When you use information from a raw chunk that has such a tag, you MUST include the citation tag VERBATIM AND UNALTERED in your synthesized answer, immediately following the information it supports.
+3.  DO NOT summarize, paraphrase, reformat, or change these tags in ANY WAY. Copy them EXACTLY as they appear in the raw chunks.
+4.  If a piece of information comes from a raw chunk, and that information is associated with a citation tag in the chunk, it MUST be followed by its original, complete citation tag in your answer.
+Failure to preserve these tags perfectly will make the output unusable.
+
+Structure your answer clearly. Do not invent facts or information not present in the provided information.
 """).strip()
-            # Context now comes from the consolidator node
-            user_prompt = f"User Question: {question}\n\nAnswer Outline:\n{outline}\n\nCurated Research Notes:\n{context}"
+            # Context now comes from the consolidator node and includes summaries and raw chunks
+            user_prompt = f"User Question: {question}\n\nAnswer Outline:\n{outline}\n\nCurated Research Information:\n{context}\n\nRemember to follow the synthesis instructions and EXTREMELY IMPORTANT CITATION PRESERVATION RULES from the system prompt, drawing details from raw chunks and citing accurately."
 
             # Estimate tokens (optional)
             # prompt_tokens = count_tokens(system_prompt + user_prompt, model=model_name)

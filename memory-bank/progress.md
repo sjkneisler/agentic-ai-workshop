@@ -127,12 +127,25 @@
 
 ---
 
+#### ✅ Chunk 14 – Richer Synthesizer Context & Citation/Focus Refinements
+*   ✅ Update `agent/state.py` to use `StructuredNote` (summary + source_chunks) for `notes`.
+*   ✅ Modify `agent/nodes/summarize.py` to create and store `StructuredNote` objects.
+*   ✅ Update `agent/nodes/consolidate.py` to process `StructuredNote` objects and include raw chunk content in `combined_context`.
+*   ✅ Refine `agent/nodes/synthesizer.py` prompt to utilize the richer `combined_context` (summaries + raw chunks).
+*   ✅ Update citation regex in `agent/nodes/synthesizer.py` for better matching.
+*   ✅ Refine `agent/nodes/clarifier.py` prompt to improve focus on current year and handle multi-aspect queries better.
+*   ✅ Refine `agent/nodes/reasoner.py` prompt to improve adherence to outline and avoid redundant actions.
+*   ✅ Update `agent/nodes/reasoner.py` to correctly access `note['summary']` from `StructuredNote`.
+*   ✅ Commit: **"Refactor for richer synthesizer context and refine prompts for citation, focus, and error handling."**
+
+---
+
 **Done?** The repo should:
 
 *   run `python main.py` with the new deep research loop flow,
-*   produce answers with formatted citations based on fetched web content,
+*   produce answers with detailed citation tags `[Source URL='...', ...]` preserved in the final output (though `[ref:N]` conversion is still pending).
 *   display an estimated cost for OpenAI API calls,
-*   pass `pytest` offline (tests need update for cost tracking),
+*   pass `pytest` offline (tests need significant update for cost tracking and new context structure),
 *   and let users tweak config or modules.
 
 ---

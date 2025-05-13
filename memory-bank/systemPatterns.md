@@ -38,12 +38,12 @@ Below is a **two-tier implementation roadmap** reflecting the current agent arch
 4.  **New Nodes:** Create node files in `agent/nodes/`:
     *   `chunk_embed.py`: `chunk_and_embed_node` (uses Chroma in-memory, OpenAI embeddings).
     *   `retrieve.py`: `retrieve_relevant_chunks_node` (queries session store).
-    *   `summarize.py`: `summarize_chunks_node` (uses small LLM, embeds detailed citations).
-    *   `consolidate.py`: `consolidate_notes_node` (uses cross-encoder for re-ranking).
+    *   `summarize.py`: `summarize_chunks_node` (uses small LLM, embeds detailed citations into a summary, stores as `StructuredNote` with source chunks).
+    *   `consolidate.py`: `consolidate_notes_node` (uses cross-encoder for re-ranking `StructuredNote` summaries, prepares `combined_context` with summaries and raw source chunks).
     *   `search.py`: `search_node` (calls `serper_search` utility).
     *   `fetch.py`: `fetch_node` (calls `fetch_url` tool).
-5.  **Reasoner Refactor:** Rewrite `agent/reasoner.py` (`reason_node`) to be the decision-making LLM call, outputting `next_action` and arguments.
-6.  **Synthesizer Update:** Modify `agent/synthesizer.py` (`synthesize_node`) prompt to preserve detailed citations; add post-processing regex logic for reference list generation.
+5.  **Reasoner Refactor:** Rewrite `agent/reasoner.py` (`reason_node`) to be the decision-making LLM call, outputting `next_action` and arguments. (Later updated to handle `StructuredNote` summaries for its context).
+6.  **Synthesizer Update:** Modify `agent/synthesizer.py` (`synthesize_node`) prompt to preserve detailed citations from raw chunks provided in the richer `combined_context`; add post-processing regex logic for reference list generation.
 7.  **Config Update:** Add default sections and getters for `embedding`, `summarizer`, `retriever`, `consolidator` to `agent/config.py`. Update `reasoner` and `synthesizer` prompts/defaults. Ensure `config.yaml` can override these.
 8.  **File Organization:** Move `clarifier.py`, `reasoner.py`, `synthesizer.py` to `agent/nodes/`. Remove old `search_node` from `agent/search.py`.
 9.  **Graph Wiring:** Rewrite `agent/__init__.py` to import all nodes, define conditional routing logic (`route_after_reasoning`, `route_after_chunk_embed`), and connect the full graph flow (Clarify -> Reason -> [Search | Fetch -> Embed -> Retrieve -> Summarize] -> Reason -> ... -> Consolidate -> Synthesize -> END). Update initial state in `run_agent`.

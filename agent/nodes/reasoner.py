@@ -20,7 +20,7 @@ except ImportError:
     LANGCHAIN_CALLBACKS_AVAILABLE = False
 
 # Agent State
-from agent.state import AgentState # Use absolute import
+from agent.state import AgentState, StructuredNote # Import StructuredNote
 
 # Config
 from agent.config import get_reasoner_config, get_openai_pricing_config # Use absolute import
@@ -78,7 +78,8 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
         return {"error": error_msg, "next_action": "STOP", "total_openai_cost": current_total_openai_cost}
 
     # --- Format Notes and Search Results for Prompt ---
-    formatted_notes = "\n".join(f"- {note}" for note in notes) if notes else "No notes gathered yet."
+    # Access the 'summary' field from each StructuredNote
+    formatted_notes = "\n".join(f"- {note['summary']}" for note in notes) if notes else "No notes gathered yet."
     formatted_search = ""
     if search_results:
          # Mark seen URLs in the list presented to the LLM
@@ -101,25 +102,28 @@ def reason_node(state: AgentState) -> Dict[str, Any]:
 You are the reasoning core of a research agent. Your goal is to decide the single next step to fulfill the research plan based on the information gathered so far.
 
 Analyze the User's Question, the Research Plan Outline, and the Notes gathered.
+**Your primary goal is to ensure all sections of the Research Plan Outline are adequately covered.**
+Identify sections in the outline that lack sufficient information in the 'Notes Gathered So Far'.
+Prioritize actions (SEARCH, FETCH, RETRIEVE_CHUNKS) that directly address these uncovered or under-covered outline sections.
 Consider the Recent Search Results if deciding to fetch a URL.
 
 Possible Next Actions:
-1.  FETCH: If there is at least one URL in 'Recent Search Results' that is **NOT** listed under 'URLs Already Fetched' AND you deem it highly promising for a topic in the 'Research Plan Outline'. Prioritize this over SEARCH. Provide the exact URL to fetch. If multiple unvisited URLs are promising, pick the one you believe is most relevant.
+1.  FETCH: **You MUST ONLY choose this action if there is a URL in 'Recent Search Results' that is NOT marked as '(Already Fetched)' AND you deem it highly promising for a topic in the 'Research Plan Outline'.** Provide the exact URL to fetch from the unvisited options. If multiple unvisited URLs are promising, pick the one you believe is most relevant. **DO NOT choose to FETCH a URL that is marked '(Already Fetched)' or is listed under 'URLs Already Processed And Stored'.**
 2.  RETRIEVE_CHUNKS: If you need to consult information already fetched and stored (e.g., to check coverage on a topic before searching again, or if the most relevant URLs have already been fetched and summarized). Provide a concise query for the vector store relevant to an outline topic.
 3.  CONSOLIDATE: If you believe enough information has been gathered across all outline points and notes should be prepared for the final answer. Choose this if the notes adequately cover the outline.
 4.  STOP: If the plan seems fulfilled by the notes, or if you are stuck after trying different actions.
 5.  SEARCH: **ONLY as a last resort.** Choose SEARCH if, and only if, **ALL** of the following conditions are met:
-    a. There are NO unvisited URLs in 'Recent Search Results' that you deem relevant and promising for any part of the 'Research Plan Outline'.
+    a. There are NO unvisited (not marked '(Already Fetched)') URLs in 'Recent Search Results' that you deem relevant and promising for any part of the 'Research Plan Outline'.
     b. You have already considered if `RETRIEVE_CHUNKS` could answer the immediate need.
     c. More general information or new starting points are absolutely essential for an uncovered part of the outline.
-    Avoid previously attempted queries listed below, or queries that are extremely similar.
+    **Critically, avoid queries that are identical or semantically very similar to those in 'Previously Attempted Queries'. Aim for novel search terms if SEARCH is truly necessary.**
 
 Current Iteration: {iteration}/{max_iterations}
 
-Previously Attempted Queries (Avoid repeating):
+Previously Attempted Queries (Avoid repeating these or very similar ones):
 {seen_queries}
 
-URLs Already Fetched (Avoid fetching again):
+URLs Already Processed And Stored (DO NOT FETCH THESE AGAIN):
 {seen_urls}
 
 Provide your decision in the following format ONLY:
@@ -144,7 +148,10 @@ Previously Attempted Queries:
 URLs Already Fetched:
 {formatted_seen_urls}
 
-Based on the current state (Iteration {current_iteration+1}/{max_iterations}), what is the single best next action to take? Ensure the action and argument directly help fulfill the Research Plan Outline. Format your response clearly as 'Action: [ACTION]' and 'Argument: [ARGUMENT]'. If the action doesn't require an argument, use 'Argument: None'.
+Based on the current state (Iteration {current_iteration+1}/{max_iterations}), what is the single best next action to take?
+**Ensure your chosen action and argument directly help fulfill an under-covered section of the Research Plan Outline.**
+If multiple sections are under-covered, pick one to focus on for this iteration.
+Format your response clearly as 'Action: [ACTION]' and 'Argument: [ARGUMENT]'. If the action doesn't require an argument, use 'Argument: None'.
 """
 
     # --- Invoke LLM for Decision ---

@@ -5,7 +5,7 @@ import warnings
 from typing import Dict, Any, List
 
 # State and Config
-from agent.state import AgentState
+from agent.state import AgentState, StructuredNote # Import StructuredNote
 from agent.config import get_summarizer_config, get_openai_pricing_config # Need to add this to config.py
 
 # Langchain callbacks for token usage
@@ -79,9 +79,19 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
     # Updated prompts to use the new citation format
     system_prompt = summarizer_config.get(
         'system_prompt',
-        "You are an efficient assistant. Summarize the key facts from the following passages in bullet points (maximum 120 words total). Focus on information relevant to the original query. Keep exact numbers/quotes where possible. **Cite each claim meticulously using the EXACT source citation tag provided with each passage, like [Source URL='...', Title='...', Chunk=...]. Do NOT alter the citation tag format.**"
+        """You are an expert research summarizer. Your task is to extract key facts from the provided passages and present them as bullet points (aim for approximately 300-400 words total, but be concise if less information is available).
+Focus ONLY on information relevant to the Original Query provided.
+Preserve exact numbers, names, and direct quotes when they are crucial.
+
+**CRITICAL CITATION INSTRUCTIONS:**
+1. For EVERY piece of information or claim you extract, you MUST include its corresponding source citation tag.
+2. The citation tag is provided with each passage in the format: `[Source URL='<URL>', Title='<TITLE>', Chunk=<CHUNK_INDEX>]`.
+3. You MUST copy this tag EXACTLY as provided, without any modification, immediately after the information it supports.
+4. Example: '- The sky is blue [Source URL='http://example.com/sky', Title='Sky Facts', Chunk=1].'
+5. DO NOT summarize, paraphrase, or alter the content or format of these citation tags in any way.
+Failure to follow these citation rules will render the summary unusable."""
     )
-    user_prompt = f"Original Query (for context): {state['clarified_question']}\n\nPassages to Summarize:\n{formatted_chunks}\n\nInstructions: Provide a concise bullet-point summary (max 120 words) citing sources using the full [Source URL='...', Title='...', Chunk=...] tag format provided above."
+    user_prompt = f"Original Query (for context): {state['clarified_question']}\n\nPassages to Summarize:\n{formatted_chunks}\n\nInstructions: Provide a bullet-point summary (aiming for 300-400 words, but be concise if less information is available). Adhere strictly to the CRITICAL CITATION INSTRUCTIONS in the system prompt, ensuring every summarized point is followed by its exact, unaltered `[Source URL='...', Title='...', Chunk=...]` tag."
 
     # 3. Invoke LLM
     if is_verbose:
@@ -126,9 +136,16 @@ def summarize_chunks_node(state: AgentState) -> Dict[str, Any]:
         elif is_verbose:
              print_verbose("Summarizer LLM finished.", style="green")
 
-        # Append the generated note (with embedded citations) to the list
-        current_notes = state.get('notes', [])
-        current_notes.append(summary_note.strip())
+        # Append the generated note (with embedded citations) and its source chunks to the list
+        current_notes: List[StructuredNote] = state.get('notes', [])
+        # Keep a copy of the original retrieved_chunks for this note
+        # The main retrieved_chunks in state will be cleared after this node.
+        note_source_chunks = list(retrieved_chunks) # Create a shallow copy
+
+        current_notes.append({
+            "summary": summary_note.strip(),
+            "source_chunks": note_source_chunks
+        })
 
         updated_total_openai_cost = current_total_openai_cost + current_node_call_cost
         if is_verbose:

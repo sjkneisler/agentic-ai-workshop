@@ -5,6 +5,12 @@ from typing import List, Dict, Any, TypedDict, Optional, Set
 
 # Import VectorStore for type hinting the session store
 from langchain_core.vectorstores import VectorStore
+from langchain_core.documents import Document # Import Document for type hinting
+
+class StructuredNote(TypedDict):
+    """Represents a summary note and its source chunks."""
+    summary: str
+    source_chunks: List[Document]
 
 class AgentState(TypedDict):
     """Represents the state of our agent graph."""
@@ -20,7 +26,7 @@ class AgentState(TypedDict):
     # New fields for deep research loop
     session_vector_store: Optional[VectorStore] # Ephemeral store for fetched/chunked content
     fetched_docs: List[Dict[str, Any]] # Store results from fetch_url tool {url, title, html}
-    notes: List[str] # List of source-grounded notes generated during reasoning
+    notes: List[StructuredNote] # List of source-grounded notes (summary + source_chunks)
     seen_queries: Set[str] # Track queries made by the reasoner to avoid loops
 
     # Final outputs
